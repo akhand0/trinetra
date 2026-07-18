@@ -1,0 +1,34 @@
+# Trinetra ClickHouse overlay for the OpenTelemetry Demo.
+#
+# Usage (from a checkout of https://github.com/open-telemetry/opentelemetry-demo):
+#
+#   git clone https://github.com/open-telemetry/opentelemetry-demo.git
+#   cd opentelemetry-demo
+#   cp /path/to/trinetra/datagen/otel-demo/otelcol-clickhouse.yaml .
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f /path/to/trinetra/datagen/otel-demo/compose.clickhouse.yaml \
+#     up
+#
+# This mounts our collector overlay onto the Demo's built-in extras hook
+# (/etc/otelcol-config-extras.yml) so the ClickHouse exporter is merged into the
+# existing logs/traces/metrics pipelines without editing the Demo's own config.
+#
+# Point the CLICKHOUSE_* values at the same instance the Trinetra app reads from.
+# After the collector's first flush, apply db/clickhouse/005_otel_views.sql so
+# the probes see logs/metrics/spans over the collector's otel_* tables.
+#
+# The Demo's own flagd feature flags (paymentServiceFailure, cartServiceFailure,
+# adServiceFailure, etc.) manufacture the failures. See
+# db/clickhouse/006_otel_incident_labels.sql for the matching ground-truth
+# labels the replayer bootstraps from.
+
+services:
+  otel-collector:
+    volumes:
+      - ./otelcol-clickhouse.yaml:/etc/otelcol-config-extras.yml
+    environment:
+      - CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT:-tcp://clickhouse:9000?dial_timeout=10s}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-otel}
+      - CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}

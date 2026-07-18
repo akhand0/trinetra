@@ -1,0 +1,39 @@
+# Trinetra collector overlay for the OpenTelemetry Demo.
+#
+# This is merged on top of the Demo's bundled collector config via the
+# --config flag chain in compose.clickhouse.yaml. It adds a ClickHouse exporter
+# and wires it into the logs/traces/metrics pipelines alongside whatever the
+# Demo already exports. The exporter lazily creates otel_logs, otel_traces, and
+# otel_metrics_* on first flush; db/clickhouse/005_otel_views.sql then re-exposes
+# them under the logs/metrics/spans names the probes query.
+#
+# CLICKHOUSE_* env vars come from compose.clickhouse.yaml (point them at your
+# ClickHouse Cloud or self-hosted endpoint).
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CLICKHOUSE_ENDPOINT}
+    database: ${env:CLICKHOUSE_DATABASE}
+    username: ${env:CLICKHOUSE_USERNAME}
+    password: ${env:CLICKHOUSE_PASSWORD}
+    ttl: 720h
+    logs_table_name: otel_logs
+    traces_table_name: otel_traces
+    metrics_table_name: otel_metrics
+    timeout: 10s
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+service:
+  pipelines:
+    traces:
+      exporters: [clickhouse]
+    metrics:
+      exporters: [clickhouse]
+    logs:
+      exporters: [clickhouse]

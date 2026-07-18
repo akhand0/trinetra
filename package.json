@@ -1,0 +1,44 @@
+{
+  "name": "trinetra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The third eye for your telemetry - an adaptive visual incident investigator.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "trigger:dev": "trigger dev",
+    "trigger:deploy": "trigger deploy",
+    "seed": "tsx datagen/seed.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/mcp": "^2.0.15",
+    "@ai-sdk/openai": "^4.0.16",
+    "@ai-sdk/react": "^4.0.34",
+    "@clickhouse/client": "^1.23.1",
+    "@trigger.dev/sdk": "^4.5.4",
+    "ai": "^7.0.31",
+    "lucide-react": "^0.525.0",
+    "next": "16.2.10",
+    "pg": "^8.16.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.2.10",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@11.9.0"
+}
