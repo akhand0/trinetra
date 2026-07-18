@@ -50,9 +50,20 @@ function livePanel(arm: ProbeArm, live: LiveTelemetry): PanelData {
         before > 0 ? Math.round(((after - before) / before) * 100) : 0;
       return {
         ...panel,
+        kind: "chart",
         title: `${live.topLatencyService} p99 at ${after} ms over ${live.windowMinutes}m`,
         finding: `${live.topLatencyService} p99 ${after} ms (baseline ${before} ms, ${changePct >= 0 ? "+" : ""}${changePct}%)`,
         confidence: Math.min(99, Math.max(0, changePct)),
+        spec: {
+          mark: "area",
+          title: `${live.topLatencyService} p99 (ms)`,
+          x: { field: "minute", label: "Time" },
+          y: { field: "p99", label: "p99 ms" },
+          data: live.latencySeries.map((point) => ({
+            minute: point.label,
+            p99: point.value,
+          })),
+        },
         series: live.latencySeries.map((point) => ({
           label: point.label,
           value: point.value,
@@ -72,12 +83,25 @@ function livePanel(arm: ProbeArm, live: LiveTelemetry): PanelData {
       const hasErrors = live.errorSpans > 0 || live.errorLogs > 0;
       return {
         ...panel,
+        kind: hasErrors ? "chart" : panel.kind,
         title: hasErrors
           ? `${live.topErrorService ?? "Errors"} concentrates the failures`
           : "No error concentration in window",
         finding: hasErrors
           ? `${live.errorSpans} error spans · ${live.errorLogs} error logs`
           : "0 error spans across the live window",
+        spec: hasErrors
+          ? {
+              mark: "bar",
+              title: "Error volume by signal",
+              x: { field: "signal" },
+              y: { field: "count" },
+              data: [
+                { signal: "Error spans", count: live.errorSpans },
+                { signal: "Error logs", count: live.errorLogs },
+              ],
+            }
+          : undefined,
         stats: [
           {
             label: "Error spans",

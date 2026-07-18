@@ -1,3 +1,5 @@
+import type { ChartSpec } from "@/lib/telemetry/chart-spec";
+
 export type ProbeArm =
   | "latency_shift"
   | "error_cluster"
@@ -19,7 +21,8 @@ export type PanelKind =
   | "trace"
   | "errors"
   | "cardinality"
-  | "deploy";
+  | "deploy"
+  | "chart";
 
 export type ProbeStatus = "queued" | "running" | "complete" | "adapted";
 
@@ -59,6 +62,9 @@ export interface PanelData {
   series?: SeriesPoint[];
   heatmap?: HeatCell[];
   spans?: TraceSpan[];
+  /** Agent-composed visualization; when present, takes precedence over the
+   * pre-made kind renderers. */
+  spec?: ChartSpec;
   stats?: Array<{ label: string; value: string; tone?: "bad" | "good" | "neutral" }>;
 }
 

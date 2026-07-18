@@ -69,6 +69,26 @@ export async function runProbeQuery(arm: ProbeArm): Promise<number> {
   return rows.length;
 }
 
+/** Streams an agent-composed panel (carrying a ChartSpec) into the current
+ * turn. Unlike {@link streamPanel} the id is passed explicitly, since this runs
+ * inside a plain AI SDK tool rather than a probe task. */
+export async function streamChartPanel(
+  panel: PanelData,
+  id: string,
+): Promise<void> {
+  const { waitUntilComplete } = chat.stream.writer({
+    target: "root",
+    execute: ({ write }) => {
+      write({
+        type: "data-panel",
+        id,
+        data: { ...panel, status: "complete" },
+      });
+    },
+  });
+  await waitUntilComplete();
+}
+
 export async function streamPanel(
   panel: PanelData,
   status: "running" | "complete",
