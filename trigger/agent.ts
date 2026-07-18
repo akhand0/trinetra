@@ -1,6 +1,7 @@
 import { openai } from "@ai-sdk/openai";
 import { ai, chat } from "@trigger.dev/sdk/ai";
 import { type ModelMessage, stepCountIs, streamText, tool } from "ai";
+import { z } from "zod";
 import {
   createClickHouseMcpClient,
   createClickStackMcpClient,
@@ -10,12 +11,23 @@ import { classifyContext } from "@/lib/policy/context";
 import { applyEvidence, nextArm, type ProbeEvidence } from "@/lib/policy/steering";
 import { chooseArms } from "@/lib/policy/thompson";
 import { createEpisode, recordDecision } from "@/lib/postgres/episodes";
-import type { Posterior, ProbeArm } from "@/lib/types";
+import { chartSpecSchema } from "@/lib/telemetry/chart-spec";
+import { panelTemplate } from "@/lib/telemetry/panels";
+import type { PanelData, Posterior, ProbeArm } from "@/lib/types";
 import { cardinalityScanProbe } from "./probes/cardinality-scan";
 import { deployCorrelationProbe } from "./probes/deploy-correlation";
 import { errorClusterProbe } from "./probes/error-cluster";
 import { latencyShiftProbe } from "./probes/latency-shift";
+import { streamChartPanel } from "./probes/shared";
 import { traceMiningProbe } from "./probes/trace-mining";
+
+const PROBE_ARMS = [
+  "latency_shift",
+  "error_cluster",
+  "deploy_correlation",
+  "trace_mining",
+  "cardinality_scan",
+] as const;
 
 type ProbeToolName =
   | "latencyShift"
@@ -121,6 +133,30 @@ const tools = {
     inputSchema: cardinalityScanProbe.schema!,
     execute: ai.toolExecute(cardinalityScanProbe),
   }),
+  renderChart: tool({
+    description:
+      "Compose a visualization from telemetry rows you have already queried. " +
+      "Choose the mark (line/area/bar/scatter) and x/y encodings that best " +
+      "express the finding, and pass the actual rows as `data`. Use this to " +
+      "turn raw query results into a panel instead of describing them in prose.",
+    inputSchema: chartSpecSchema.extend({
+      episodeId: z.string(),
+      arm: z.enum(PROBE_ARMS),
+      finding: z.string(),
+    }),
+    execute: async (input, { toolCallId }) => {
+      const { episodeId, arm, finding, ...spec } = input;
+      const panel: PanelData = {
+        ...panelTemplate(arm),
+        kind: "chart",
+        title: spec.title ?? "",
+        finding,
+        spec,
+      };
+      await streamChartPanel(panel, toolCallId ?? `chart-${episodeId}`);
+      return { finding };
+    },
+  }),
 };
 
 export const trinetraAgent = chat.agent({
@@ -205,8 +241,11 @@ For every incident question:
 2. Use list_tables to discover available telemetry, then use run_query with
    read-only SELECT statements to investigate logs, metrics, and spans.
 3. Run the policy-selected probes above to communicate the MCP evidence.
-4. Use the evidence to state one concise likely root cause and confidence.
-5. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
+4. When a query returns rows worth seeing, call renderChart to compose a
+   visualization from those actual rows — pick the mark and encodings that
+   best express the finding rather than defaulting to a fixed panel shape.
+5. Use the evidence to state one concise likely root cause and confidence.
+6. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
 
 Never issue writes, DDL, or destructive SQL. Keep prose to at most three short
 sentences. Panels stream directly from tools.`,

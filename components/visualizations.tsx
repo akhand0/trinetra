@@ -1,5 +1,6 @@
 "use client";
 
+import type { ChartSpec } from "@/lib/telemetry/chart-spec";
 import type {
   HeatCell,
   Posterior,
@@ -11,6 +12,198 @@ function linePath(points: Array<{ x: number; y: number }>) {
   return points
     .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
     .join(" ");
+}
+
+const SERIES_COLORS = ["#ff8a3d", "#70d9ff", "#9588ff", "#5fd48b", "#ff5c6c"];
+
+/**
+ * Generic renderer for an agent-composed {@link ChartSpec}. Draws line / area /
+ * bar / scatter marks over a flat data table, with an optional series channel
+ * that splits the data into colored groups. Non-numeric y values coerce to 0
+ * so a partially malformed spec still renders something honest.
+ */
+export function ChartSpecView({
+  spec,
+  compact = false,
+}: {
+  spec: ChartSpec;
+  compact?: boolean;
+}) {
+  const width = 620;
+  const height = compact ? 150 : 200;
+  const pad = { left: 34, right: 14, top: 16, bottom: 30 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+
+  const xField = spec.x.field;
+  const yField = spec.y.field;
+  const seriesField = spec.series?.field;
+
+  const categories = Array.from(
+    new Set(spec.data.map((row) => String(row[xField] ?? ""))),
+  );
+  const seriesKeys = seriesField
+    ? Array.from(new Set(spec.data.map((row) => String(row[seriesField] ?? ""))))
+    : ["__single"];
+
+  const num = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const yValues = spec.data.map((row) => num(row[yField]));
+  const maxY = Math.max(...yValues, 0) * 1.08 || 1;
+  const minY = Math.min(...yValues, 0);
+
+  const xOf = (category: string) => {
+    const index = categories.indexOf(category);
+    const step = plotW / Math.max(categories.length - 1, 1);
+    return pad.left + index * step;
+  };
+  const yOf = (value: number) =>
+    pad.top + ((maxY - value) / Math.max(maxY - minY, 1)) * plotH;
+
+  const rowsFor = (key: string) =>
+    seriesField
+      ? spec.data.filter((row) => String(row[seriesField] ?? "") === key)
+      : spec.data;
+
+  const baseline = pad.top + plotH;
+  const barSlot = plotW / Math.max(categories.length, 1);
+  const barWidth = Math.max(
+    2,
+    (barSlot * 0.6) / Math.max(seriesKeys.length, 1),
+  );
+
+  return (
+    <svg
+      className="chart-svg"
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={spec.title ?? `${spec.mark} chart`}
+    >
+      {[0, 0.5, 1].map((position) => {
+        const value = minY + (maxY - minY) * (1 - position);
+        const y = pad.top + position * plotH;
+        return (
+          <g key={position}>
+            <line
+              x1={pad.left}
+              x2={width - pad.right}
+              y1={y}
+              y2={y}
+              stroke="rgba(255,255,255,.06)"
+            />
+            <text x="2" y={y + 3} fill="rgba(214,220,232,.4)" fontSize="9">
+              {Math.round(value)}
+            </text>
+          </g>
+        );
+      })}
+
+      {seriesKeys.map((key, seriesIndex) => {
+        const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
+        const rows = rowsFor(key);
+        const points = rows.map((row) => ({
+          x: xOf(String(row[xField] ?? "")),
+          y: yOf(num(row[yField])),
+          raw: num(row[yField]),
+        }));
+
+        if (spec.mark === "bar") {
+          return (
+            <g key={key}>
+              {points.map((point, index) => {
+                const offset =
+                  seriesIndex * barWidth - (seriesKeys.length * barWidth) / 2;
+                return (
+                  <rect
+                    key={index}
+                    x={point.x + offset}
+                    y={point.y}
+                    width={barWidth}
+                    height={Math.max(0, baseline - point.y)}
+                    fill={color}
+                    opacity="0.85"
+                    rx="1.5"
+                  />
+                );
+              })}
+            </g>
+          );
+        }
+
+        if (spec.mark === "scatter") {
+          return (
+            <g key={key}>
+              {points.map((point, index) => (
+                <circle
+                  key={index}
+                  cx={point.x}
+                  cy={point.y}
+                  r="3.5"
+                  fill={color}
+                  opacity="0.9"
+                />
+              ))}
+            </g>
+          );
+        }
+
+        // line / area
+        const linePoints = points.map((point) => ({ x: point.x, y: point.y }));
+        return (
+          <g key={key}>
+            {spec.mark === "area" && linePoints.length > 1 && (
+              <path
+                d={`${linePath(linePoints)} L ${linePoints.at(-1)?.x} ${baseline} L ${linePoints[0]?.x} ${baseline} Z`}
+                fill={color}
+                opacity="0.16"
+              />
+            )}
+            <path
+              d={linePath(linePoints)}
+              fill="none"
+              stroke={color}
+              strokeWidth="2.4"
+            />
+            {points.map((point, index) => (
+              <circle
+                key={index}
+                cx={point.x}
+                cy={point.y}
+                r="3"
+                fill={color}
+                stroke="#151922"
+                strokeWidth="1.5"
+              />
+            ))}
+          </g>
+        );
+      })}
+
+      {categories.map((category, index) =>
+        index % Math.ceil(categories.length / 6) === 0 ||
+        index === categories.length - 1 ? (
+          <text
+            key={category}
+            x={xOf(category)}
+            y={height - 8}
+            fill="rgba(214,220,232,.46)"
+            fontSize="9"
+            textAnchor={
+              index === 0
+                ? "start"
+                : index === categories.length - 1
+                  ? "end"
+                  : "middle"
+            }
+          >
+            {category.length > 12 ? `${category.slice(0, 11)}…` : category}
+          </text>
+        ) : null,
+      )}
+    </svg>
+  );
 }
 
 export function AreaChart({

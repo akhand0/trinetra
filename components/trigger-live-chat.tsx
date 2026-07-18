@@ -6,6 +6,8 @@ import { ArrowLeft, Send, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
+import { ChartSpecView } from "@/components/visualizations";
+import { safeParseChartSpec } from "@/lib/telemetry/chart-spec";
 import type { trinetraAgent } from "@/trigger/agent";
 
 export function TriggerLiveChat() {
@@ -48,11 +50,17 @@ export function TriggerLiveChat() {
                   return <p key={index}>{part.text}</p>;
                 }
                 if (part.type === "data-panel") {
-                  const data = part.data as { title?: string; finding?: string };
+                  const data = part.data as {
+                    title?: string;
+                    finding?: string;
+                    spec?: unknown;
+                  };
+                  const spec = safeParseChartSpec(data.spec);
                   return (
                     <div className="live-data-part" key={index}>
-                      <small>STREAMED PANEL</small>
+                      <small>{spec ? "AGENT-COMPOSED CHART" : "STREAMED PANEL"}</small>
                       <b>{data.title ?? "Probe panel"}</b>
+                      {spec && <ChartSpecView spec={spec} compact />}
                       <p>{data.finding}</p>
                     </div>
                   );

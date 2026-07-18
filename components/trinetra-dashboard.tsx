@@ -38,6 +38,7 @@ import type {
 } from "@/lib/types";
 import {
   AreaChart,
+  ChartSpecView,
   Heatmap,
   PosteriorBars,
   TraceWaterfall,
@@ -72,6 +73,14 @@ function updateNode(list: DagNode[], incoming: DagNode) {
 }
 
 function PanelVisual({ panel }: { panel: PanelData }) {
+  if (panel.spec) {
+    return (
+      <div className="panel-visual">
+        <ChartSpecView spec={panel.spec} compact />
+      </div>
+    );
+  }
+
   if (panel.kind === "timeline" && panel.series) {
     return (
       <div className="panel-visual timeline-visual">
