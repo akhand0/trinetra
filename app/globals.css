@@ -219,6 +219,19 @@ a {
   cursor: pointer;
 }
 
+.mobile-new-investigation {
+  display: none;
+  border: 1px solid rgba(255, 129, 66, 0.34);
+  background: rgba(255, 116, 58, 0.08);
+  color: #f1b18f;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
@@ -2363,6 +2376,10 @@ a {
 
   .top-status > span {
     display: none;
+  }
+
+  .mobile-new-investigation {
+    display: flex;
   }
 
   .workspace,
