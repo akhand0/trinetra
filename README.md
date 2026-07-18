@@ -64,7 +64,8 @@ The first result fan-out appears progressively. Open the error-cluster panel to 
 Copy `.env.example` to `.env.local` and configure:
 
 - `TRIGGER_SECRET_KEY` and `TRIGGER_PROJECT_REF`
-- `OPENAI_API_KEY` and the frozen `TRINETRA_MODEL`
+- `OPENROUTER_API_KEY` and the frozen `TRINETRA_MODEL` (OpenRouter uses the
+  OpenAI-compatible Chat Completions API)
 - `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DATABASE`
 - `POSTGRES_URL` for ClickHouse-managed Postgres
 
