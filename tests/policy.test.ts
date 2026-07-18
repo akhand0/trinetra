@@ -5,7 +5,7 @@ import {
   chooseArms,
   posteriorAfterReward,
 } from "@/lib/policy/thompson";
-import { INITIAL_POSTERIORS } from "@/lib/telemetry/mock-data";
+import { POSTERIORS } from "./fixtures";
 
 function deterministicRandom(values: number[]) {
   let index = 0;
@@ -37,7 +37,7 @@ describe("Thompson policy", () => {
 
   it("logs a normalized propensity for every selected arm", () => {
     const choices = chooseArms(
-      INITIAL_POSTERIORS,
+      POSTERIORS,
       3,
       deterministicRandom([0.23, 0.51, 0.77, 0.42, 0.89, 0.33, 0.68]),
     );
@@ -49,7 +49,7 @@ describe("Thompson policy", () => {
   });
 
   it("moves the posterior mean upward after positive feedback", () => {
-    const before = INITIAL_POSTERIORS[0];
+    const before = POSTERIORS[0];
     const after = posteriorAfterReward(before, 1);
     expect(after.mean).toBeGreaterThan(before.mean);
     expect(after.trials).toBe(before.trials + 1);

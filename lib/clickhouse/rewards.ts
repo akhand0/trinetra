@@ -1,5 +1,5 @@
 import { clickhouse, hasClickHouseConfig } from "@/lib/clickhouse/client";
-import { INITIAL_POSTERIORS } from "@/lib/telemetry/mock-data";
+import { ARM_LABELS } from "@/lib/telemetry/panels";
 import type { ContextBucket, Posterior, RewardEvent } from "@/lib/types";
 
 export async function recordReward(event: RewardEvent): Promise<void> {
@@ -22,14 +22,6 @@ export async function recordReward(event: RewardEvent): Promise<void> {
     ],
   });
 }
-
-const ARM_LABELS: Record<Posterior["arm"], string> = {
-  latency_shift: "Latency",
-  error_cluster: "Errors",
-  deploy_correlation: "Deploy",
-  trace_mining: "Trace",
-  cardinality_scan: "Cardinality",
-};
 
 export interface LearningSummary {
   posteriors: Posterior[];
@@ -95,18 +87,15 @@ export async function readLearningSummary(): Promise<LearningSummary | null> {
       r.json<{ reward_events: number; episodes: number; confirmed: number }>(),
     );
 
-  const posteriors: Posterior[] =
-    posteriorRows.length === 0
-      ? INITIAL_POSTERIORS
-      : posteriorRows.map((row) => ({
-          arm: row.arm,
-          label: ARM_LABELS[row.arm],
-          alpha: Number(row.alpha),
-          beta: Number(row.beta),
-          mean: Number(row.mean),
-          sampled: Number(row.mean),
-          trials: Number(row.trials),
-        }));
+  const posteriors: Posterior[] = posteriorRows.map((row) => ({
+    arm: row.arm,
+    label: ARM_LABELS[row.arm],
+    alpha: Number(row.alpha),
+    beta: Number(row.beta),
+    mean: Number(row.mean),
+    sampled: Number(row.mean),
+    trials: Number(row.trials),
+  }));
 
   return {
     posteriors,
@@ -119,7 +108,7 @@ export async function readLearningSummary(): Promise<LearningSummary | null> {
 export async function readPosteriors(
   context: ContextBucket,
 ): Promise<Posterior[]> {
-  if (!hasClickHouseConfig()) return INITIAL_POSTERIORS;
+  if (!hasClickHouseConfig()) return [];
 
   const result = await clickhouse().query({
     query: `
@@ -147,19 +136,9 @@ export async function readPosteriors(
     mean: number;
   }>();
 
-  if (rows.length === 0) return INITIAL_POSTERIORS;
-
-  const labels: Record<Posterior["arm"], string> = {
-    latency_shift: "Latency",
-    error_cluster: "Errors",
-    deploy_correlation: "Deploy",
-    trace_mining: "Trace",
-    cardinality_scan: "Cardinality",
-  };
-
   return rows.map((row) => ({
     arm: row.arm,
-    label: labels[row.arm],
+    label: ARM_LABELS[row.arm],
     alpha: Number(row.alpha),
     beta: Number(row.beta),
     mean: Number(row.mean),

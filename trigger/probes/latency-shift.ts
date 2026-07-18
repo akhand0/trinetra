@@ -1,6 +1,6 @@
 import { schemaTask } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { PANELS } from "@/lib/telemetry/mock-data";
+import { panelTemplate } from "@/lib/telemetry/panels";
 import { runProbeQuery, streamPanel } from "./shared";
 
 export const latencyShiftProbe = schemaTask({
@@ -12,13 +12,14 @@ export const latencyShiftProbe = schemaTask({
     episodeId: z.string(),
   }),
   run: async () => {
-    await streamPanel(PANELS.timeline, "running");
+    const panel = panelTemplate("latency_shift");
+    await streamPanel(panel, "running");
     const rowCount = await runProbeQuery("latency_shift");
-    await streamPanel(PANELS.timeline, "complete");
-    return {
-      finding: PANELS.timeline.finding,
-      confidence: PANELS.timeline.confidence,
-      rowCount,
+    const finished = {
+      ...panel,
+      finding: `${rowCount} latency buckets scanned`,
     };
+    await streamPanel(finished, "complete");
+    return { finding: finished.finding, rowCount };
   },
 });

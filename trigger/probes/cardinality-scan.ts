@@ -1,6 +1,6 @@
 import { schemaTask } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { PANELS } from "@/lib/telemetry/mock-data";
+import { panelTemplate } from "@/lib/telemetry/panels";
 import { runProbeQuery, streamPanel } from "./shared";
 
 export const cardinalityScanProbe = schemaTask({
@@ -12,13 +12,14 @@ export const cardinalityScanProbe = schemaTask({
     episodeId: z.string(),
   }),
   run: async () => {
-    await streamPanel(PANELS.cardinality, "running");
+    const panel = panelTemplate("cardinality_scan");
+    await streamPanel(panel, "running");
     const rowCount = await runProbeQuery("cardinality_scan");
-    await streamPanel(PANELS.cardinality, "complete");
-    return {
-      finding: PANELS.cardinality.finding,
-      confidence: PANELS.cardinality.confidence,
-      rowCount,
+    const finished = {
+      ...panel,
+      finding: `${rowCount} services scanned for tag cardinality`,
     };
+    await streamPanel(finished, "complete");
+    return { finding: finished.finding, rowCount };
   },
 });

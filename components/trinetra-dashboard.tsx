@@ -17,7 +17,6 @@ import {
   Maximize2,
   Network,
   PanelLeftClose,
-  Play,
   Search,
   Send,
   ShieldCheck,
@@ -28,16 +27,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ADAPTED_POSTERIORS,
-  DEMO_QUERY,
-  INITIAL_DAG,
-  INITIAL_POSTERIORS,
-  LEARNING_CURVE,
-  PANELS,
-  RECENT_INCIDENTS,
-  ROOT_CAUSE,
-} from "@/lib/telemetry/mock-data";
+import { uniformPriors } from "@/lib/telemetry/panels";
 import type {
   DagNode,
   InvestigationEvent,
@@ -49,7 +39,6 @@ import type {
 import {
   AreaChart,
   Heatmap,
-  LearningChart,
   PosteriorBars,
   TraceWaterfall,
 } from "@/components/visualizations";
@@ -57,10 +46,12 @@ import {
 type View = "canvas" | "dag" | "learning";
 
 const suggestions = [
-  "Why did checkout latency spike after Tuesday's deploy?",
+  "Why did checkout latency spike after the last deploy?",
   "Show me where the 5xx burst started",
-  "Find the slowest trace in the last hour",
+  "Find the slowest trace in the last window",
 ];
+
+const DEFAULT_QUERY = suggestions[0];
 
 function EyeMark({ small = false }: { small?: boolean }) {
   return (
@@ -117,31 +108,18 @@ function PanelVisual({ panel }: { panel: PanelData }) {
   if (panel.kind === "deploy") {
     return (
       <div className="panel-visual deploy-diff">
-        <div className="diff-line muted">
-          <span>DB_POOL_MIN</span>
-          <b>8</b>
-        </div>
-        <div className="diff-line remove">
-          <span>− DB_POOL_MAX</span>
-          <b>40</b>
-        </div>
-        <div className="diff-line add">
-          <span>+ DB_POOL_MAX</span>
-          <b>12</b>
-        </div>
         <div className="deploy-marker">
           <GitBranch size={14} />
-          <span>rollout completed</span>
-          <b>14:02:11</b>
+          <span>{panel.finding || "No rollout event in window"}</span>
         </div>
       </div>
     );
   }
 
-  if (panel.kind === "cardinality" && panel.series) {
+  if (panel.kind === "cardinality") {
     return (
       <div className="panel-visual cardinality-visual">
-        <AreaChart data={panel.series} compact />
+        {panel.series && <AreaChart data={panel.series} compact />}
         <span className="clear-stamp">
           <ShieldCheck size={15} /> no anomaly
         </span>
@@ -329,7 +307,35 @@ function DagRail({
   );
 }
 
+interface LearningSummary {
+  replayedEpisodes: number;
+  rewardEvents: number;
+  confirmedRoots: number;
+  policyLift: number;
+}
+
 function LearningView({ posteriors }: { posteriors: Posterior[] }) {
+  const [summary, setSummary] = useState<LearningSummary | null>(null);
+  const [livePosteriors, setLivePosteriors] = useState<Posterior[]>(posteriors);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/learning")
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: { summary: LearningSummary; posteriors: Posterior[] }) => {
+        if (!active) return;
+        setSummary(data.summary);
+        if (data.posteriors?.length) setLivePosteriors(data.posteriors);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const fmt = (value: number | undefined) =>
+    value === undefined ? "—" : value.toLocaleString();
+
   return (
     <div className="learning-view">
       <section className="learning-hero">
@@ -337,48 +343,44 @@ function LearningView({ posteriors }: { posteriors: Posterior[] }) {
           <span className="section-eyebrow">OUTER LOOP · ACROSS QUERIES</span>
           <h1>The third eye is getting sharper.</h1>
           <p>
-            Simulated SRE replays bootstrap the policy honestly. Real panel
-            interactions update the same ClickHouse reward stream.
+            Every panel interaction writes to the same ClickHouse reward
+            stream, and the posterior materialized view is the learner.
           </p>
         </div>
         <div className="learning-summary">
           <span>
             <small>Episodes replayed</small>
-            <b>312</b>
-            <em>+48 today</em>
+            <b>{fmt(summary?.replayedEpisodes)}</b>
+            <em>from reward stream</em>
           </span>
           <span>
             <small>Reward events</small>
-            <b>2,847</b>
+            <b>{fmt(summary?.rewardEvents)}</b>
             <em>materialized live</em>
           </span>
           <span>
             <small>Policy lift</small>
-            <b>+42%</b>
-            <em>vs. uniform policy</em>
+            <b>
+              {summary ? `${summary.policyLift >= 0 ? "+" : ""}${summary.policyLift}%` : "—"}
+            </b>
+            <em>best vs. worst arm</em>
           </span>
         </div>
       </section>
       <div className="learning-grid">
-        <section className="learning-panel curve-panel">
-          <header>
-            <div>
-              <span className="section-eyebrow">7-DAY LEARNING CURVE</span>
-              <h2>Correct probe in the first fan-out</h2>
-            </div>
-            <span className="bootstrap-pill">simulated-SRE bootstrap</span>
-          </header>
-          <LearningChart data={LEARNING_CURVE} />
-        </section>
         <section className="learning-panel posterior-panel">
           <header>
             <div>
               <span className="section-eyebrow">POSTERIOR STATE</span>
-              <h2>latency_after_deploy</h2>
+              <h2>across all contexts</h2>
             </div>
             <Braces size={17} />
           </header>
-          <PosteriorBars posteriors={posteriors} />
+          {livePosteriors.length > 0 ? (
+            <PosteriorBars posteriors={livePosteriors} />
+          ) : (
+            <p className="empty-note">No posterior state yet — awaiting rewards.</p>
+          )}
         </section>
         <section className="learning-panel mechanics-panel">
           <header>
@@ -460,19 +462,17 @@ function FullscreenPanel({
 
 export function TrinetraDashboard() {
   const [view, setView] = useState<View>("canvas");
-  const [query, setQuery] = useState(DEMO_QUERY);
-  const [submittedQuery, setSubmittedQuery] = useState(DEMO_QUERY);
-  const [episodeId, setEpisodeId] = useState("demo-episode");
+  const [query, setQuery] = useState(DEFAULT_QUERY);
+  const [submittedQuery, setSubmittedQuery] = useState(DEFAULT_QUERY);
+  const [episodeId, setEpisodeId] = useState("");
   const [panels, setPanels] = useState<PanelData[]>([]);
-  const [nodes, setNodes] = useState<DagNode[]>(INITIAL_DAG.slice(0, 2));
-  const [posteriors, setPosteriors] =
-    useState<Posterior[]>(INITIAL_POSTERIORS);
+  const [nodes, setNodes] = useState<DagNode[]>([]);
+  const [posteriors, setPosteriors] = useState<Posterior[]>(uniformPriors());
   const [rootCause, setRootCause] = useState<RootCause | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
   const [expandedPanel, setExpandedPanel] = useState<PanelData | null>(null);
-  const [adaptation, setAdaptation] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const startedRef = useRef(false);
@@ -489,8 +489,8 @@ export function TrinetraDashboard() {
       eventType: RewardEvent["eventType"],
       value: number,
     ) => {
-      if (!episodeId) return null;
-      const response = await fetch("/api/rewards", {
+      if (!episodeId) return;
+      await fetch("/api/rewards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -502,16 +502,7 @@ export function TrinetraDashboard() {
           value,
           propensity: panel.propensity,
         } satisfies RewardEvent),
-      });
-      if (!response.ok) return null;
-      return response.json() as Promise<{
-        accepted: boolean;
-        policyShift: null | {
-          posteriors: Posterior[];
-          nextPanel: PanelData;
-          node: DagNode;
-        };
-      }>;
+      }).catch(() => undefined);
     },
     [episodeId],
   );
@@ -523,11 +514,10 @@ export function TrinetraDashboard() {
       activeRequest.current = controller;
       setLoading(true);
       setConfirmed(false);
-      setAdaptation(false);
       setPanels([]);
       setNodes([]);
       setRootCause(null);
-      setPosteriors(INITIAL_POSTERIORS);
+      setPosteriors(uniformPriors());
       setSubmittedQuery(nextQuery);
       setView("canvas");
 
@@ -581,10 +571,10 @@ export function TrinetraDashboard() {
         }
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
-          setPanels([PANELS.timeline, PANELS.heatmap, PANELS.deploy]);
-          setNodes(INITIAL_DAG.map((node) => ({ ...node, status: "complete" })));
-          setRootCause(ROOT_CAUSE);
-          pushToast("Cloud stream unavailable · switched to local evidence");
+          setPanels([]);
+          setNodes([]);
+          setRootCause(null);
+          pushToast("Live telemetry unavailable · no data to show");
         }
       } finally {
         setLoading(false);
@@ -596,7 +586,10 @@ export function TrinetraDashboard() {
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    const timer = window.setTimeout(() => void runInvestigation(DEMO_QUERY), 260);
+    const timer = window.setTimeout(
+      () => void runInvestigation(DEFAULT_QUERY),
+      260,
+    );
     return () => {
       window.clearTimeout(timer);
       activeRequest.current?.abort();
@@ -606,77 +599,27 @@ export function TrinetraDashboard() {
   const selectPanel = useCallback(
     async (panel: PanelData) => {
       setSelectedPanel(panel.id);
-      const response = await recordInteraction(panel, "click", 0.62);
-      if (response?.policyShift && !adaptation) {
-        setAdaptation(true);
-        setPosteriors(response.policyShift.posteriors);
-        setNodes((current) => updateNode(current, response.policyShift!.node));
-        pushToast("Signal received · trace mining promoted from 4th to 1st");
-        window.setTimeout(() => {
-          setPanels((current) =>
-            current.some(
-              (candidate) => candidate.id === response.policyShift!.nextPanel.id,
-            )
-              ? current
-              : [...current, response.policyShift!.nextPanel],
-          );
-        }, 720);
-      }
+      await recordInteraction(panel, "click", 0.62);
     },
-    [adaptation, pushToast, recordInteraction],
+    [recordInteraction],
   );
 
   const expandPanel = useCallback(
     async (panel: PanelData) => {
       setExpandedPanel(panel);
-      const response = await recordInteraction(panel, "expand", 0.78);
-      if (response?.policyShift && !adaptation) {
-        setAdaptation(true);
-        setPosteriors(response.policyShift.posteriors);
-        setNodes((current) => updateNode(current, response.policyShift!.node));
-        setPanels((current) =>
-          current.some(
-            (candidate) => candidate.id === response.policyShift!.nextPanel.id,
-          )
-            ? current
-            : [...current, response.policyShift!.nextPanel],
-        );
-        pushToast("Posterior shifted · the next probe changed");
-      }
+      await recordInteraction(panel, "expand", 0.78);
     },
-    [adaptation, pushToast, recordInteraction],
+    [recordInteraction],
   );
 
   const confirmRootCause = useCallback(async () => {
-    const evidence = panels.find((panel) => panel.arm === "trace_mining") ??
-      panels[0] ??
-      PANELS.timeline;
+    const evidence =
+      panels.find((panel) => panel.arm === "trace_mining") ?? panels[0];
+    if (!evidence) return;
     await recordInteraction(evidence, "confirm_root_cause", 1);
     setConfirmed(true);
-    setPosteriors(ADAPTED_POSTERIORS);
-    pushToast("Jackpot reward logged · credit assigned to 4 probes");
+    pushToast("Reward logged · credit assigned to the fan-out");
   }, [panels, pushToast, recordInteraction]);
-
-  const showExploration = useCallback(() => {
-    setPanels((current) =>
-      current.some((panel) => panel.id === PANELS.cardinality.id)
-        ? current
-        : [...current, PANELS.cardinality],
-    );
-    setNodes((current) =>
-      updateNode(current, {
-        id: "cardinality_scan",
-        label: "Cardinality scan",
-        detail: "Explored, ruled out, policy recovered",
-        arm: "cardinality_scan",
-        status: "complete",
-        duration: "816 ms",
-        score: 0.39,
-      }),
-    );
-    setView("canvas");
-    pushToast("Exploratory arm shown · negative evidence is still evidence");
-  }, [pushToast]);
 
   const canvasTitle = useMemo(
     () =>
@@ -738,17 +681,22 @@ export function TrinetraDashboard() {
           </button>
           <div className="sidebar-section">
             <div className="sidebar-label">
-              <span>RECENT INCIDENTS</span>
+              <span>SUGGESTED QUERIES</span>
               <ChevronDown size={13} />
             </div>
-            {RECENT_INCIDENTS.map((incident) => (
-              <button className="incident-link" key={incident.id}>
-                <i className={incident.tone} />
+            {suggestions.map((suggestion) => (
+              <button
+                className="incident-link"
+                key={suggestion}
+                onClick={() => {
+                  setQuery(suggestion);
+                  void runInvestigation(suggestion);
+                }}
+              >
+                <i />
                 <span>
-                  <b>{incident.title}</b>
-                  <small>{incident.id}</small>
+                  <b>{suggestion}</b>
                 </span>
-                <em>{incident.time}</em>
               </button>
             ))}
           </div>
@@ -768,8 +716,8 @@ export function TrinetraDashboard() {
             <div>
               <Database size={14} />
               <span>
-                <b>Production</b>
-                18.4M events / min
+                <b>ClickHouse Cloud</b>
+                live OTel stream
               </span>
               <ChevronRight size={13} />
             </div>
@@ -852,9 +800,6 @@ export function TrinetraDashboard() {
                         streamed back into the root chat session.
                       </p>
                     </div>
-                    <button onClick={showExploration}>
-                      <Play size={14} /> Replay exploratory miss
-                    </button>
                   </div>
                   <div className="dag-canvas">
                     <div className="root-agent-node">
@@ -959,19 +904,10 @@ export function TrinetraDashboard() {
                         <div>
                           <Sparkles size={14} />
                           <span>
-                            <b>
-                              {adaptation
-                                ? "This answer adapted to you."
-                                : "This answer can adapt."}
-                            </b>
-                            {adaptation
-                              ? " Your signal promoted trace mining and changed the next panel."
-                              : " Open the error cluster to steer which probe runs next."}
+                            <b>This answer learns from you.</b>
+                            {" Open or expand a panel to log a reward into the ClickHouse policy."}
                           </span>
                         </div>
-                        <button onClick={showExploration}>
-                          Show exploration <ArrowRight size={13} />
-                        </button>
                       </section>
                     )}
                   </div>

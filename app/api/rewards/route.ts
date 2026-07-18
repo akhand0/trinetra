@@ -1,9 +1,5 @@
 import { recordReward } from "@/lib/clickhouse/rewards";
 import { confirmEpisode } from "@/lib/postgres/episodes";
-import {
-  ADAPTED_POSTERIORS,
-  PANELS,
-} from "@/lib/telemetry/mock-data";
 import type { RewardEvent } from "@/lib/types";
 import { z } from "zod";
 
@@ -55,26 +51,5 @@ export async function POST(request: Request) {
     await confirmEpisode(event.episodeId);
   }
 
-  const shouldAdapt =
-    event.arm === "error_cluster" &&
-    ["click", "expand", "drilldown"].includes(event.eventType);
-
-  return Response.json({
-    accepted: true,
-    policyShift: shouldAdapt
-      ? {
-          posteriors: ADAPTED_POSTERIORS,
-          nextPanel: PANELS.trace,
-          node: {
-            id: "trace_mining",
-            label: "Trace mining",
-            detail: "Promoted by your error-cluster signal",
-            arm: "trace_mining",
-            status: "adapted",
-            duration: "1.1 s",
-            score: 0.94,
-          },
-        }
-      : null,
-  });
+  return Response.json({ accepted: true });
 }
