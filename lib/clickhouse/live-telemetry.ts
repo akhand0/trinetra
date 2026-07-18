@@ -30,9 +30,9 @@ async function scalar<T>(query: string): Promise<T | null> {
 
 /**
  * Reads a compact live summary straight from the OTel-backed logs/metrics/spans
- * views. Returns null when ClickHouse is not configured or any query fails, so
- * the web routes degrade cleanly to their deterministic demo data instead of
- * throwing. This is the app's real read path over the running collector stream.
+ * views. Returns null when ClickHouse is not configured or any query fails so
+ * callers can report that live telemetry is unavailable. This is the app's
+ * only investigation read path over the running collector stream.
  */
 export async function readLiveTelemetry(
   windowMinutes = 15,

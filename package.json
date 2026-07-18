@@ -12,8 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "trigger:dev": "trigger dev",
-    "trigger:deploy": "trigger deploy",
-    "seed": "tsx datagen/seed.ts"
+    "trigger:deploy": "trigger deploy"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.15",

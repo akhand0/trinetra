@@ -317,7 +317,7 @@ function DagRail({
 }
 
 interface LearningSummary {
-  replayedEpisodes: number;
+  episodes: number;
   rewardEvents: number;
   confirmedRoots: number;
   policyLift: number;
@@ -358,8 +358,8 @@ function LearningView({ posteriors }: { posteriors: Posterior[] }) {
         </div>
         <div className="learning-summary">
           <span>
-            <small>Episodes replayed</small>
-            <b>{fmt(summary?.replayedEpisodes)}</b>
+            <small>Live episodes</small>
+            <b>{fmt(summary?.episodes)}</b>
             <em>from reward stream</em>
           </span>
           <span>

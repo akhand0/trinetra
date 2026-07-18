@@ -13,8 +13,8 @@ const CONCENTRATED = /concentrat|single service|one service|isolated|localized/i
 /**
  * Fold a completed probe's evidence back into the posterior mid-episode. The
  * arm that just ran is rewarded by its evidence strength, and a concentrated
- * error cluster promotes trace mining — the same shift the demo canvas makes
- * when a user opens the error-cluster panel. This is the inner learning loop:
+ * error cluster promotes trace mining when a user opens the error-cluster
+ * panel. This is the inner learning loop:
  * the posterior the policy samples from changes while the answer is assembling.
  */
 export function applyEvidence(

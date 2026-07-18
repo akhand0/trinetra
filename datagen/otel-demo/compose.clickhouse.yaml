@@ -19,9 +19,7 @@
 # the probes see logs/metrics/spans over the collector's otel_* tables.
 #
 # The Demo's own flagd feature flags (paymentServiceFailure, cartServiceFailure,
-# adServiceFailure, etc.) manufacture the failures. See
-# db/clickhouse/006_otel_incident_labels.sql for the matching ground-truth
-# labels the replayer bootstraps from.
+# adServiceFailure, etc.) manufacture live failures for investigation.
 
 services:
   otel-collector:

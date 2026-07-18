@@ -20,7 +20,7 @@ export async function GET() {
   return Response.json({
     posteriors: summary.posteriors,
     summary: {
-      replayedEpisodes: summary.replayedEpisodes,
+      episodes: summary.episodes,
       rewardEvents: summary.rewardEvents,
       confirmedRoots: summary.confirmedRoots,
       policyLift,

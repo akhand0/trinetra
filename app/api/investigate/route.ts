@@ -19,14 +19,6 @@ export const dynamic = "force-dynamic";
 
 const encoder = new TextEncoder();
 
-function seededRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
 function line(event: InvestigationEvent): Uint8Array {
   return encoder.encode(`${JSON.stringify(event)}\n`);
 }
@@ -223,7 +215,7 @@ export async function POST(request: Request) {
   const context = classifyContext(query);
   const posteriors =
     storedPosteriors.length > 0 ? storedPosteriors : uniformPriors();
-  const choices = chooseArms(posteriors, 3, seededRandom(2048));
+  const choices = chooseArms(posteriors, 3);
 
   await createEpisode({ id: episodeId, chatId, query, context });
   await Promise.all(
