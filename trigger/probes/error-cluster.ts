@@ -1,6 +1,6 @@
 import { schemaTask } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { PANELS } from "@/lib/telemetry/mock-data";
+import { panelTemplate } from "@/lib/telemetry/panels";
 import { runProbeQuery, streamPanel } from "./shared";
 
 export const errorClusterProbe = schemaTask({
@@ -12,13 +12,14 @@ export const errorClusterProbe = schemaTask({
     episodeId: z.string(),
   }),
   run: async () => {
-    await streamPanel(PANELS.heatmap, "running");
+    const panel = panelTemplate("error_cluster");
+    await streamPanel(panel, "running");
     const rowCount = await runProbeQuery("error_cluster");
-    await streamPanel(PANELS.heatmap, "complete");
-    return {
-      finding: PANELS.heatmap.finding,
-      confidence: PANELS.heatmap.confidence,
-      rowCount,
+    const finished = {
+      ...panel,
+      finding: `${rowCount} services ranked by error volume`,
     };
+    await streamPanel(finished, "complete");
+    return { finding: finished.finding, rowCount };
   },
 });

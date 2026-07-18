@@ -1,6 +1,6 @@
 import { schemaTask } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { PANELS } from "@/lib/telemetry/mock-data";
+import { panelTemplate } from "@/lib/telemetry/panels";
 import { runProbeQuery, streamPanel } from "./shared";
 
 export const traceMiningProbe = schemaTask({
@@ -12,13 +12,14 @@ export const traceMiningProbe = schemaTask({
     episodeId: z.string(),
   }),
   run: async () => {
-    await streamPanel(PANELS.trace, "running");
+    const panel = panelTemplate("trace_mining");
+    await streamPanel(panel, "running");
     const rowCount = await runProbeQuery("trace_mining");
-    await streamPanel(PANELS.trace, "complete");
-    return {
-      finding: PANELS.trace.finding,
-      confidence: PANELS.trace.confidence,
-      rowCount,
+    const finished = {
+      ...panel,
+      finding: `${rowCount} traces ranked by total duration`,
     };
+    await streamPanel(finished, "complete");
+    return { finding: finished.finding, rowCount };
   },
 });

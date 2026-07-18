@@ -6,11 +6,7 @@ import { readPosteriors } from "@/lib/clickhouse/rewards";
 import { createEpisode, recordDecision } from "@/lib/postgres/episodes";
 import { classifyContext } from "@/lib/policy/context";
 import { chooseArms } from "@/lib/policy/thompson";
-import {
-  INITIAL_POSTERIORS,
-  PANELS,
-  ROOT_CAUSE,
-} from "@/lib/telemetry/mock-data";
+import { panelTemplate, uniformPriors } from "@/lib/telemetry/panels";
 import type {
   InvestigationEvent,
   PanelData,
@@ -35,27 +31,18 @@ function line(event: InvestigationEvent): Uint8Array {
   return encoder.encode(`${JSON.stringify(event)}\n`);
 }
 
-function armPanel(arm: ProbeArm) {
-  const byArm: Record<ProbeArm, keyof typeof PANELS> = {
-    latency_shift: "timeline",
-    error_cluster: "heatmap",
-    deploy_correlation: "deploy",
-    trace_mining: "trace",
-    cardinality_scan: "cardinality",
-  };
-  return PANELS[byArm[arm]];
-}
+/** Fills an empty panel template with live ClickHouse findings for its arm. */
+function livePanel(arm: ProbeArm, live: LiveTelemetry): PanelData {
+  const panel = panelTemplate(arm);
 
-/**
- * Overlays live ClickHouse telemetry onto a seeded panel while preserving the
- * panel's visual contract (kind, accent, chart shape). When no live signal is
- * available for an arm the seeded panel passes through unchanged.
- */
-function overlayPanel(panel: PanelData, live: LiveTelemetry): PanelData {
-  switch (panel.arm) {
+  switch (arm) {
     case "latency_shift": {
       if (!live.latencySeries.length || live.topLatencyP99Ms === null) {
-        return panel;
+        return {
+          ...panel,
+          title: "No latency signal in window",
+          finding: `0 qualifying spans over the last ${live.windowMinutes}m`,
+        };
       }
       const before = live.baselineP99Ms ?? live.latencySeries[0].value;
       const after = live.topLatencyP99Ms;
@@ -65,6 +52,7 @@ function overlayPanel(panel: PanelData, live: LiveTelemetry): PanelData {
         ...panel,
         title: `${live.topLatencyService} p99 at ${after} ms over ${live.windowMinutes}m`,
         finding: `${live.topLatencyService} p99 ${after} ms (baseline ${before} ms, ${changePct >= 0 ? "+" : ""}${changePct}%)`,
+        confidence: Math.min(99, Math.max(0, changePct)),
         series: live.latencySeries.map((point) => ({
           label: point.label,
           value: point.value,
@@ -101,11 +89,7 @@ function overlayPanel(panel: PanelData, live: LiveTelemetry): PanelData {
             value: `${live.errorLogs}`,
             tone: live.errorLogs > 0 ? "bad" : "good",
           },
-          {
-            label: "Services",
-            value: `${live.services}`,
-            tone: "neutral",
-          },
+          { label: "Services", value: `${live.services}`, tone: "neutral" },
         ],
       };
     }
@@ -122,12 +106,28 @@ function overlayPanel(panel: PanelData, live: LiveTelemetry): PanelData {
       };
     }
     case "trace_mining": {
-      if (!live.slowestTrace) return panel;
+      if (!live.slowestTrace) {
+        return {
+          ...panel,
+          title: "No trace in window",
+          finding: `0 traces over the last ${live.windowMinutes}m`,
+        };
+      }
       const t = live.slowestTrace;
       return {
         ...panel,
         title: `${t.service} · ${t.op} is the slowest span`,
         finding: `${t.traceId.slice(0, 8)} · ${t.service} · ${t.op}`,
+        spans: [
+          {
+            id: t.traceId.slice(0, 8),
+            service: t.service,
+            operation: t.op,
+            start: 0,
+            duration: Math.round(t.durationMs),
+            status: live.errorSpans > 0 ? "error" : "ok",
+          },
+        ],
         stats: [
           { label: "Trace", value: t.traceId.slice(0, 8), tone: "neutral" },
           {
@@ -145,11 +145,7 @@ function overlayPanel(panel: PanelData, live: LiveTelemetry): PanelData {
         title: `${live.metricNames} distinct metric names`,
         finding: `${live.metricNames} metric names, no explosion detected`,
         stats: [
-          {
-            label: "Metrics",
-            value: `${live.metricNames}`,
-            tone: "good",
-          },
+          { label: "Metrics", value: `${live.metricNames}`, tone: "good" },
           { label: "Services", value: `${live.services}`, tone: "neutral" },
           { label: "Verdict", value: "Clear", tone: "good" },
         ],
@@ -186,15 +182,23 @@ export async function POST(request: Request) {
     return Response.json({ error: "A query is required" }, { status: 400 });
   }
 
+  const [live, storedPosteriors] = await Promise.all([
+    readLiveTelemetry().catch(() => null),
+    readPosteriors(classifyContext(query)).catch(() => []),
+  ]);
+
+  if (!live) {
+    return Response.json(
+      { error: "Live telemetry is unavailable" },
+      { status: 503 },
+    );
+  }
+
   const episodeId = crypto.randomUUID();
   const chatId = body.chatId ?? `chat-${episodeId.slice(0, 8)}`;
   const context = classifyContext(query);
-
-  const [live, posteriors] = await Promise.all([
-    readLiveTelemetry().catch(() => null),
-    readPosteriors(context).catch(() => INITIAL_POSTERIORS),
-  ]);
-
+  const posteriors =
+    storedPosteriors.length > 0 ? storedPosteriors : uniformPriors();
   const choices = chooseArms(posteriors, 3, seededRandom(2048));
 
   await createEpisode({ id: episodeId, chatId, query, context });
@@ -209,11 +213,11 @@ export async function POST(request: Request) {
       const pause = (ms: number) =>
         new Promise((resolve) => setTimeout(resolve, ms));
 
-      const headline = live
-        ? `Classified as ${context} · ${live.spanCount} spans / ${live.services} services live`
-        : `Classified as ${context}`;
-
-      send({ type: "episode", episodeId, message: headline });
+      send({
+        type: "episode",
+        episodeId,
+        message: `Classified as ${context} · ${live.spanCount} spans / ${live.services} services live`,
+      });
       send({ type: "posterior", posterior: posteriors });
 
       await pause(180);
@@ -232,17 +236,14 @@ export async function POST(request: Request) {
         node: {
           id: "policy",
           label: "Sample policy",
-          detail: live
-            ? `${choices.length + 2} probes · clickhouse`
-            : `${choices.length + 2} candidate probes`,
+          detail: `${choices.length + 2} probes · clickhouse`,
           status: "complete",
           duration: "4 ms",
         },
       });
 
       for (const [index, choice] of choices.entries()) {
-        const base = armPanel(choice.arm);
-        const panel = live ? overlayPanel(base, live) : base;
+        const panel = livePanel(choice.arm, live);
         send({
           type: "node",
           node: {
@@ -278,16 +279,8 @@ export async function POST(request: Request) {
       }
 
       await pause(300);
-      send({
-        type: "root_cause",
-        rootCause: live ? liveRootCause(live) : ROOT_CAUSE,
-      });
-      send({
-        type: "done",
-        message: live
-          ? "Live fan-out complete"
-          : "Initial fan-out complete",
-      });
+      send({ type: "root_cause", rootCause: liveRootCause(live) });
+      send({ type: "done", message: "Live fan-out complete" });
       controller.close();
     },
   });

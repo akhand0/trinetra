@@ -1,6 +1,6 @@
 import { schemaTask } from "@trigger.dev/sdk";
 import { z } from "zod";
-import { PANELS } from "@/lib/telemetry/mock-data";
+import { panelTemplate } from "@/lib/telemetry/panels";
 import { runProbeQuery, streamPanel } from "./shared";
 
 export const deployCorrelationProbe = schemaTask({
@@ -12,13 +12,14 @@ export const deployCorrelationProbe = schemaTask({
     episodeId: z.string(),
   }),
   run: async () => {
-    await streamPanel(PANELS.deploy, "running");
+    const panel = panelTemplate("deploy_correlation");
+    await streamPanel(panel, "running");
     const rowCount = await runProbeQuery("deploy_correlation");
-    await streamPanel(PANELS.deploy, "complete");
-    return {
-      finding: PANELS.deploy.finding,
-      confidence: PANELS.deploy.confidence,
-      rowCount,
+    const finished = {
+      ...panel,
+      finding: `${rowCount} deploy events correlated`,
     };
+    await streamPanel(finished, "complete");
+    return { finding: finished.finding, rowCount };
   },
 });
