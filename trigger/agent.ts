@@ -15,6 +15,10 @@ import {
   metricSpecSchema,
   tableSpecSchema,
 } from "@/lib/telemetry/chart-spec";
+import {
+  visualResponseSchema,
+  type VisualResponseData,
+} from "@/lib/telemetry/visual-response";
 import { panelTemplate } from "@/lib/telemetry/panels";
 import type { PanelData, Posterior, ProbeArm } from "@/lib/types";
 import {
@@ -28,6 +32,7 @@ import { errorClusterProbe } from "./probes/error-cluster";
 import { latencyShiftProbe } from "./probes/latency-shift";
 import { streamChartPanel } from "./probes/shared";
 import { traceMiningProbe } from "./probes/trace-mining";
+import { visualReportTask } from "./visual-report";
 
 const PROBE_ARMS = [
   "latency_shift",
@@ -136,6 +141,69 @@ function latestUserQuery(messages: ModelMessage[]): string {
       .trim();
   }
   return "";
+}
+
+function isEmailReportRequest(query: string) {
+  return (
+    /\b(email|e-mail|send|share|deliver)\b/i.test(query) &&
+    /\b(report|analysis|results?|visual|incident)\b/i.test(query)
+  );
+}
+
+function emailRecipient(query: string) {
+  return query.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+}
+
+function previousInvestigationQuery(messages: ModelMessage[]) {
+  let skippedCurrent = false;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "user") continue;
+    const text =
+      typeof message.content === "string"
+        ? message.content
+        : message.content
+            .filter(
+              (part): part is { type: "text"; text: string } =>
+                part.type === "text",
+            )
+            .map((part) => part.text)
+            .join(" ")
+            .trim();
+    if (!skippedCurrent) {
+      skippedCurrent = true;
+      continue;
+    }
+    if (text && !isEmailReportRequest(text)) return text;
+  }
+  return "";
+}
+
+function latestCompletedReport(
+  messages: ModelMessage[],
+): VisualResponseData | undefined {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+    const content = messages[messageIndex].content;
+    if (!Array.isArray(content)) continue;
+    for (let partIndex = content.length - 1; partIndex >= 0; partIndex--) {
+      const part = content[partIndex] as {
+        type?: string;
+        output?: unknown;
+        result?: unknown;
+      };
+      if (part.type !== "tool-result") continue;
+      const raw = part.output ?? part.result;
+      const value =
+        (raw as { value?: unknown } | undefined)?.value ?? raw;
+      const parsed = visualResponseSchema.safeParse(
+        (value as { report?: unknown } | undefined)?.report,
+      );
+      if (parsed.success && parsed.data.status === "complete") {
+        return parsed.data;
+      }
+    }
+  }
+  return undefined;
 }
 
 function shouldUseInvestigationTeam(query: string) {
@@ -259,6 +327,70 @@ export const trinetraAgent = chat.agent({
   tools,
   run: async ({ messages, chatId, tools: panelTools, signal }) => {
     const query = latestUserQuery(messages);
+    const recipient = emailRecipient(query);
+
+    if (recipient && isEmailReportRequest(query)) {
+      const existingReport = latestCompletedReport(messages);
+      const reportQuery =
+        existingReport?.query ?? previousInvestigationQuery(messages);
+      const emailTools = {
+        sendEmailReport: tool({
+          description:
+            "Send the user's latest Trinetra visual report through Resend. " +
+            "This tool is already bound to the requested recipient and report.",
+          inputSchema: z.object({}),
+          execute: async () => {
+            if (!reportQuery) {
+              return {
+                emailed: false,
+                deliveryMessage:
+                  "Create a visual investigation before emailing a report.",
+              };
+            }
+
+            const result = await visualReportTask.triggerAndWait({
+              query: reportQuery,
+              email: recipient,
+              report: existingReport,
+            });
+
+            if (!result.ok) {
+              return {
+                emailed: false,
+                deliveryMessage: "Email delivery task failed.",
+              };
+            }
+
+            return {
+              emailed: result.output.emailed,
+              deliveryMessage: result.output.deliveryMessage,
+            };
+          },
+        }),
+      };
+
+      return streamText({
+        ...chat.toStreamTextOptions({ tools: emailTools }),
+        model: trinetraModel(),
+        system: `You send Trinetra visual reports. Call sendEmailReport exactly
+once, then state its deliveryMessage exactly and concisely. Never say you are
+unable to send email. Do not investigate data or call any other tool.`,
+        messages,
+        tools: emailTools,
+        abortSignal: signal,
+        stopWhen: stepCountIs(3),
+        prepareStep: ({ steps }) =>
+          toolNamesFromSteps(steps).has("sendEmailReport")
+            ? {}
+            : {
+                toolChoice: {
+                  type: "tool" as const,
+                  toolName: "sendEmailReport" as const,
+                },
+              },
+      });
+    }
+
     const context = classifyContext(query);
 
     // The LLM proposes; the contextual Thompson policy disposes. Sample the

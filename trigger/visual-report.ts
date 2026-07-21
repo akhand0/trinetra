@@ -1,12 +1,16 @@
 import { task } from "@trigger.dev/sdk";
 import { Resend } from "resend";
-import type { VisualResponseData } from "@/lib/telemetry/visual-response";
+import {
+  visualResponseSchema,
+  type VisualResponseData,
+} from "@/lib/telemetry/visual-response";
 import { runInvestigationTeam } from "./investigation-team";
 import { reportStream } from "./report-stream";
 
 type VisualReportPayload = {
   query: string;
   email?: string;
+  report?: VisualResponseData;
 };
 
 function escapeHtml(value: string) {
@@ -45,6 +49,7 @@ export const visualReportTask = task({
   run: async (payload: VisualReportPayload, { ctx }) => {
     const query = payload.query.trim();
     const email = payload.email?.trim();
+    const suppliedReport = visualResponseSchema.safeParse(payload.report);
 
     if (!query) throw new Error("A report query is required.");
 
@@ -54,23 +59,34 @@ export const visualReportTask = task({
       data: null,
     });
 
-    const result = await runInvestigationTeam(
-      { query },
-      undefined,
-      {
-        publish: async (response) => {
-          await reportStream.append({
-            step:
-              response.status === "running" ? "investigating" : "composing",
-            message:
-              response.status === "running"
-                ? "Specialists are querying ClickHouse"
-                : `Composed ${response.panels.length} visual level${response.panels.length === 1 ? "" : "s"}`,
-            data: response,
-          });
+    let report: VisualResponseData;
+    if (suppliedReport.success && suppliedReport.data.status === "complete") {
+      report = suppliedReport.data;
+      await reportStream.append({
+        step: "composing",
+        message: `Using ${report.panels.length} completed visual level${report.panels.length === 1 ? "" : "s"}`,
+        data: report,
+      });
+    } else {
+      const result = await runInvestigationTeam(
+        { query },
+        undefined,
+        {
+          publish: async (response) => {
+            await reportStream.append({
+              step:
+                response.status === "running" ? "investigating" : "composing",
+              message:
+                response.status === "running"
+                  ? "Specialists are querying ClickHouse"
+                  : `Composed ${response.panels.length} visual level${response.panels.length === 1 ? "" : "s"}`,
+              data: response,
+            });
+          },
         },
-      },
-    );
+      );
+      report = result.report;
+    }
 
     let emailed = false;
     let deliveryMessage = "Visual report ready";
@@ -86,15 +102,15 @@ export const visualReportTask = task({
         await reportStream.append({
           step: "emailing",
           message: `Sending report to ${email}`,
-          data: result.report,
+          data: report,
         });
 
         try {
           const delivery = await new Resend(apiKey).emails.send({
             from,
             to: email,
-            subject: `Trinetra report: ${result.report.title}`,
-            html: reportHtml(result.report, ctx.run.id),
+            subject: `Trinetra report: ${report.title}`,
+            html: reportHtml(report, ctx.run.id),
           });
 
           if (delivery.error) {
@@ -113,13 +129,13 @@ export const visualReportTask = task({
     await reportStream.append({
       step: "done",
       message: deliveryMessage,
-      data: result.report,
+      data: report,
       emailed,
     });
 
     return {
       runId: ctx.run.id,
-      report: result.report,
+      report,
       emailed,
       deliveryMessage,
     };
