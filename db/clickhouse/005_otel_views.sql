@@ -3,13 +3,10 @@
 --
 -- The OTel Collector ClickHouse exporter auto-creates otel_logs, otel_traces,
 -- and otel_metrics_* tables on first flush. These views re-expose those tables
--- under the logs/metrics/spans names + column shapes the probes already query,
--- so the agent needs no SQL changes when telemetry comes from the real
--- OpenTelemetry Demo (~20 microservices) instead of datagen/seed.ts.
+-- under the logs/metrics/spans names + column shapes consumed by the probes.
 --
 -- Prerequisite: the collector must have written to otel_* at least once (the
--- exporter creates the tables lazily). Do NOT apply 004_demo_telemetry.sql on
--- the same instance — its real tables would collide with these view names.
+-- exporter creates the tables lazily).
 
 DROP TABLE IF EXISTS logs;
 DROP TABLE IF EXISTS metrics;

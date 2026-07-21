@@ -1,5 +1,5 @@
-import { TrinetraDashboard } from "@/components/trinetra-dashboard";
+import { AgentHome } from "@/components/agent-home";
 
 export default function Home() {
-  return <TrinetraDashboard />;
+  return <AgentHome />;
 }

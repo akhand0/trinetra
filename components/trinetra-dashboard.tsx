@@ -317,7 +317,7 @@ function DagRail({
 }
 
 interface LearningSummary {
-  replayedEpisodes: number;
+  episodes: number;
   rewardEvents: number;
   confirmedRoots: number;
   policyLift: number;
@@ -358,8 +358,8 @@ function LearningView({ posteriors }: { posteriors: Posterior[] }) {
         </div>
         <div className="learning-summary">
           <span>
-            <small>Episodes replayed</small>
-            <b>{fmt(summary?.replayedEpisodes)}</b>
+            <small>Live episodes</small>
+            <b>{fmt(summary?.episodes)}</b>
             <em>from reward stream</em>
           </span>
           <span>
@@ -486,6 +486,7 @@ export function TrinetraDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const startedRef = useRef(false);
   const activeRequest = useRef<AbortController | null>(null);
+  const queryInputRef = useRef<HTMLInputElement>(null);
 
   const pushToast = useCallback((message: string) => {
     setToast(message);
@@ -587,10 +588,31 @@ export function TrinetraDashboard() {
         }
       } finally {
         setLoading(false);
+        if (activeRequest.current === controller) {
+          activeRequest.current = null;
+        }
       }
     },
     [pushToast],
   );
+
+  const startNewInvestigation = useCallback(() => {
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    setLoading(false);
+    setQuery("");
+    setSubmittedQuery("");
+    setEpisodeId("");
+    setPanels([]);
+    setNodes([]);
+    setPosteriors(uniformPriors());
+    setRootCause(null);
+    setConfirmed(false);
+    setSelectedPanel(null);
+    setExpandedPanel(null);
+    setView("canvas");
+    window.setTimeout(() => queryInputRef.current?.focus(), 0);
+  }, []);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -672,6 +694,13 @@ export function TrinetraDashboard() {
           <span>
             <i /> systems nominal
           </span>
+          <button
+            className="mobile-new-investigation"
+            aria-label="New investigation"
+            onClick={startNewInvestigation}
+          >
+            <Sparkles size={14} />
+          </button>
           <button className="avatar">AK</button>
         </div>
       </header>
@@ -680,11 +709,7 @@ export function TrinetraDashboard() {
         <aside className="sidebar">
           <button
             className="new-investigation"
-            onClick={() => {
-              setQuery("");
-              setPanels([]);
-              setRootCause(null);
-            }}
+            onClick={startNewInvestigation}
           >
             <Sparkles size={14} /> New investigation
           </button>
@@ -771,6 +796,7 @@ export function TrinetraDashboard() {
                 >
                   <Search size={16} />
                   <input
+                    ref={queryInputRef}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Ask your telemetry anything…"

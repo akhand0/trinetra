@@ -1,11 +1,8 @@
 -- Trinetra OLAP schema — learning/policy tables (ingest-path agnostic)
 -- Apply with: clickhouse-client --multiquery < db/clickhouse/001_schema.sql
 --
--- Raw telemetry (logs/metrics/spans) lives in a separate file so the two ingest
--- paths stay mutually exclusive:
---   * synthetic demo seed  -> db/clickhouse/004_demo_telemetry.sql (real tables)
---   * OpenTelemetry Demo    -> db/clickhouse/005_otel_views.sql   (views over otel_*)
--- Apply exactly one of those alongside this file.
+-- Raw telemetry (logs/metrics/spans) is provided by the live OpenTelemetry
+-- Collector and exposed through db/clickhouse/005_otel_views.sql.
 
 CREATE TABLE IF NOT EXISTS reward_events
 (
@@ -60,17 +57,3 @@ SELECT
   countMerge(trials) AS trials
 FROM posterior_states
 GROUP BY context_bucket, arm;
-
-CREATE TABLE IF NOT EXISTS incident_labels
-(
-  incident_id UUID,
-  window_start DateTime('UTC'),
-  window_end DateTime('UTC'),
-  context_bucket LowCardinality(String),
-  culprit_service LowCardinality(String),
-  culprit_kind LowCardinality(String),
-  best_arm LowCardinality(String),
-  notes String
-)
-ENGINE = MergeTree
-ORDER BY incident_id;

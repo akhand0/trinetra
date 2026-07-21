@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { ai, chat } from "@trigger.dev/sdk/ai";
 import { type ModelMessage, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
@@ -28,6 +28,18 @@ const PROBE_ARMS = [
   "trace_mining",
   "cardinality_scan",
 ] as const;
+
+/** OpenRouter exposes an OpenAI-compatible Chat Completions endpoint. */
+const openrouter = createOpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
+  headers: {
+    ...(process.env.OPENROUTER_SITE_URL
+      ? { "HTTP-Referer": process.env.OPENROUTER_SITE_URL }
+      : {}),
+    "X-Title": "Trinetra",
+  },
+});
 
 type ProbeToolName =
   | "latencyShift"
@@ -222,7 +234,11 @@ first; fall back to the raw ClickHouse MCP SQL tools for the long tail.`
 
       return streamText({
         ...chat.toStreamTextOptions({ tools: agentTools }),
-        model: openai(process.env.TRINETRA_MODEL ?? "gpt-5-mini"),
+        // OpenRouter currently speaks Chat Completions, so use the explicit
+        // chat model entry point rather than the Responses-oriented default.
+        model: openrouter.chat(
+          process.env.TRINETRA_MODEL ?? "openai/gpt-4o",
+        ),
         system: `You are Trinetra, an incident investigation orchestrator.
 The response product is the visual canvas, not a wall of prose.
 

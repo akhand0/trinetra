@@ -25,7 +25,7 @@ export async function recordReward(event: RewardEvent): Promise<void> {
 
 export interface LearningSummary {
   posteriors: Posterior[];
-  replayedEpisodes: number;
+  episodes: number;
   rewardEvents: number;
   confirmedRoots: number;
 }
@@ -33,8 +33,7 @@ export interface LearningSummary {
 /**
  * Reads the live learning state aggregated across every context bucket: the
  * per-arm posteriors from the AggregatingMergeTree view plus reward-stream
- * counts. Returns null when ClickHouse is unconfigured so the dashboard route
- * can fall back to its seeded snapshot.
+ * counts. Returns null when ClickHouse is unconfigured.
  */
 export async function readLearningSummary(): Promise<LearningSummary | null> {
   if (!hasClickHouseConfig()) return null;
@@ -99,7 +98,7 @@ export async function readLearningSummary(): Promise<LearningSummary | null> {
 
   return {
     posteriors,
-    replayedEpisodes: Number(counts?.episodes ?? 0),
+    episodes: Number(counts?.episodes ?? 0),
     rewardEvents: Number(counts?.reward_events ?? 0),
     confirmedRoots: Number(counts?.confirmed ?? 0),
   };

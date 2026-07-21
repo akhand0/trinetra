@@ -1,5 +1,13 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
+import { tool, type ToolSet } from "ai";
+import { z } from "zod";
+import { clickhouse } from "@/lib/clickhouse/client";
+
+interface ToolClient {
+  tools(): Promise<ToolSet>;
+  close(): Promise<void>;
+}
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -31,12 +39,61 @@ function clickHouseStdioEnvironment(): Record<string, string> {
 }
 
 /**
+ * Cloud workers do not include the `uvx` executable used by the local
+ * stdio transport. Keep the same two investigation primitives available by
+ * exposing a small, explicitly read-only ClickHouse tool surface directly.
+ */
+function createNativeClickHouseClient(): ToolClient {
+  const readOnlyQuery = async (query: string) => {
+    const normalized = query.trim().replace(/;\s*$/, "");
+    if (!/^(select|with|show|describe|desc|explain)\b/i.test(normalized)) {
+      throw new Error("Only read-only SELECT/WITH/SHOW/DESCRIBE queries are allowed");
+    }
+    const result = await clickhouse().query({
+      query: normalized,
+      format: "JSONEachRow",
+    });
+    return result.json<Record<string, unknown>>();
+  };
+
+  const tools: ToolSet = {
+    list_tables: tool({
+      description:
+        "List the tables and views in the configured ClickHouse database.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        readOnlyQuery(
+          "SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name",
+        ),
+    }),
+    run_query: tool({
+      description:
+        "Run one read-only ClickHouse query. Use SELECT, WITH, SHOW, or DESCRIBE only.",
+      inputSchema: z.object({
+        query: z.string().min(1).max(20_000),
+      }),
+      execute: async ({ query }) => {
+        const rows = await readOnlyQuery(query);
+        return rows.slice(0, 200);
+      },
+    }),
+  };
+
+  return {
+    async tools() {
+      return tools;
+    },
+    async close() {},
+  };
+}
+
+/**
  * Connects the AI SDK to ClickHouse's official MCP server.
  *
  * CLICKHOUSE_MCP_URL selects a managed/hosted HTTP server. Without it, local
  * development starts the official mcp-clickhouse package over stdio via uvx.
  */
-export async function createClickHouseMcpClient(): Promise<MCPClient> {
+export async function createClickHouseMcpClient(): Promise<ToolClient> {
   const remoteUrl = process.env.CLICKHOUSE_MCP_URL;
 
   if (remoteUrl) {
@@ -52,11 +109,18 @@ export async function createClickHouseMcpClient(): Promise<MCPClient> {
     });
   }
 
+  // An explicit command opts into stdio (the local .env.example uses `uvx`).
+  // With no command, use the native adapter so Trigger cloud workers do not
+  // depend on an executable that is absent from the deployment image.
+  if (!process.env.CLICKHOUSE_MCP_COMMAND) {
+    return createNativeClickHouseClient();
+  }
+
   return createMCPClient({
     clientName: "trinetra-investigator",
     maxRetries: 1,
     transport: new Experimental_StdioMCPTransport({
-      command: process.env.CLICKHOUSE_MCP_COMMAND ?? "uvx",
+      command: process.env.CLICKHOUSE_MCP_COMMAND,
       args: ["--python", "3.13", "mcp-clickhouse"],
       env: clickHouseStdioEnvironment(),
       stderr: "pipe",
