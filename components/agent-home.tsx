@@ -5,10 +5,19 @@ import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
 import { MoreVertical, Send, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
 import { ChartSpecView } from "@/components/visualizations";
 import { safeParseChartSpec } from "@/lib/telemetry/chart-spec";
 import type { trinetraAgent } from "@/trigger/agent";
+
+function normalizeAgentMarkdown(text: string) {
+  return text.replace(
+    /[ \t]+(?=(\d+)\.\s+`)/g,
+    (_space, itemNumber: string) => (itemNumber === "1" ? "\n\n" : "\n"),
+  );
+}
 
 export function AgentHome() {
   const [message, setMessage] = useState("");
@@ -75,7 +84,15 @@ export function AgentHome() {
                 <span>{chatMessage.role === "user" ? "You" : "Trinetra"}</span>
                 {chatMessage.parts.map((part, index) => {
                   if (part.type === "text") {
-                    return <p key={index}>{part.text}</p>;
+                    return chatMessage.role === "assistant" ? (
+                      <div className="agent-markdown" key={index}>
+                        <Markdown remarkPlugins={[remarkGfm]}>
+                          {normalizeAgentMarkdown(part.text)}
+                        </Markdown>
+                      </div>
+                    ) : (
+                      <p key={index}>{part.text}</p>
+                    );
                   }
                   if (part.type === "data-panel") {
                     const data = part.data as {
