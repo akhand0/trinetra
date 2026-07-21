@@ -26,6 +26,7 @@ export const visualPanelSchema = z.discriminatedUnion("kind", [
 
 export const visualResponseSchema = z.object({
   id: z.string().min(1).max(100),
+  query: z.string().min(1).max(2000).optional(),
   title: z.string().min(1).max(140),
   verdict: z.string().min(1).max(240),
   status: z.enum(["running", "complete"]),

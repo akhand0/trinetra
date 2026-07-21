@@ -22,6 +22,7 @@ import {
   safeParseVisualResponse,
   type VisualPanel,
 } from "@/lib/telemetry/visual-response";
+import { VisualReportControl } from "@/components/visual-report-control";
 
 export type VisualPanelPayload = {
   title?: string;
@@ -106,7 +107,13 @@ function panelPayload(panel: VisualPanel): VisualPanelPayload {
   return { ...panel, status: "complete", metrics: panel.metrics };
 }
 
-export function VisualResponseGroup({ data }: { data: unknown }) {
+export function VisualResponseGroup({
+  data,
+  query,
+}: {
+  data: unknown;
+  query?: string;
+}) {
   const response = safeParseVisualResponse(data);
 
   if (!response) {
@@ -118,6 +125,8 @@ export function VisualResponseGroup({ data }: { data: unknown }) {
     );
   }
 
+  const reportQuery = response.query ?? query;
+
   return (
     <section className="agent-visual-response">
       <header>
@@ -128,10 +137,15 @@ export function VisualResponseGroup({ data }: { data: unknown }) {
           <h2>{response.title}</h2>
           <p>{response.verdict}</p>
         </div>
-        <div className="agent-specialists" aria-label="Investigation specialists">
-          {response.specialists.map((specialist) => (
-            <span key={specialist}>{specialist}</span>
-          ))}
+        <div className="agent-response-tools">
+          <div className="agent-specialists" aria-label="Investigation specialists">
+            {response.specialists.map((specialist) => (
+              <span key={specialist}>{specialist}</span>
+            ))}
+          </div>
+          {response.status === "complete" && reportQuery && (
+            <VisualReportControl query={reportQuery} />
+          )}
         </div>
       </header>
 

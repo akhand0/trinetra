@@ -595,6 +595,109 @@ textarea {
   white-space: nowrap;
 }
 
+.agent-response-tools {
+  max-width: 440px;
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+}
+
+.visual-report-open,
+.visual-report-control button {
+  min-height: 29px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(181, 106, 255, 0.22);
+  border-radius: 8px;
+  color: #c9b6d7;
+  background: rgba(181, 106, 255, 0.075);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.visual-report-open:hover,
+.visual-report-control button:hover:not(:disabled) {
+  border-color: rgba(181, 106, 255, 0.42);
+  color: #ecdef5;
+  background: rgba(181, 106, 255, 0.13);
+}
+
+.visual-report-control {
+  width: min(100%, 390px);
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.visual-report-control form {
+  width: 100%;
+  min-height: 35px;
+  padding: 3px 3px 3px 10px;
+  display: grid;
+  grid-template-columns: auto minmax(112px, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #8b8291;
+  background: rgba(7, 8, 12, 0.42);
+}
+
+.visual-report-control input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #ded7e3;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+}
+
+.visual-report-control input::placeholder {
+  color: #77717d;
+}
+
+.visual-report-control button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.visual-report-control .visual-report-close {
+  min-width: 27px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.visual-report-status,
+.visual-report-error {
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #a9a2ae;
+  font-size: 9px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.visual-report-status.complete {
+  color: #77d89e;
+}
+
+.visual-report-error {
+  color: #e89292;
+}
+
+.spin {
+  animation: visual-spin 900ms linear infinite;
+}
+
 .agent-response-grid {
   padding: 16px;
   display: grid;
@@ -1250,6 +1353,17 @@ textarea {
   .agent-specialists {
     max-width: none;
     justify-content: flex-start;
+  }
+
+  .agent-response-tools {
+    width: 100%;
+    max-width: none;
+    justify-items: start;
+  }
+
+  .visual-report-control {
+    width: 100%;
+    justify-items: start;
   }
 
   .agent-response-grid {

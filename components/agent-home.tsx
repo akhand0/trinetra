@@ -82,7 +82,7 @@ export function AgentHome() {
             aria-label="Conversation with trinetra-agent"
             aria-live="polite"
           >
-            {messages.map((chatMessage) => (
+            {messages.map((chatMessage, messageIndex) => (
               <article
                 className={`${chatMessage.role}${
                   chatMessage.parts.some(
@@ -125,8 +125,17 @@ export function AgentHome() {
                     );
                   }
                   if (part.type === "data-visual-response") {
+                    const previousUserPrompt = messages
+                      .slice(0, messageIndex)
+                      .toReversed()
+                      .find((candidate) => candidate.role === "user")
+                      ?.parts.find((candidate) => candidate.type === "text");
                     return (
-                      <VisualResponseGroup data={part.data} key={partKey} />
+                      <VisualResponseGroup
+                        data={part.data}
+                        query={previousUserPrompt?.text}
+                        key={partKey}
+                      />
                     );
                   }
                   return null;

@@ -248,39 +248,46 @@ type InvestigationTeamInput = {
   priorityArms?: Array<(typeof PROBE_ARMS)[number]>;
 };
 
+type InvestigationTeamOptions = {
+  publish?: (response: VisualResponseData) => Promise<void>;
+};
+
 export async function runInvestigationTeam(
   input: InvestigationTeamInput,
   abortSignal?: AbortSignal,
+  options?: InvestigationTeamOptions,
 ) {
   const query = input.query;
   const episodeId = input.episodeId ?? crypto.randomUUID();
   const priorityArms = input.priorityArms ?? [
-      "latency_shift",
-      "error_cluster",
-      "trace_mining",
-    ];
-    const responseId = `investigation-${episodeId}`;
-    const title = titleFor(query);
-    const running: VisualResponseData = {
-      id: responseId,
-      title,
-      verdict: "Three specialists are inspecting ClickHouse in parallel…",
-      status: "running",
-      specialists: SPECIALISTS.map((specialist) => specialist.label),
-      panels: [],
-    };
-    await streamVisualResponse(running);
-    const incidentSeed = await loadIncidentSeed(query);
+    "latency_shift",
+    "error_cluster",
+    "trace_mining",
+  ];
+  const publish = options?.publish ?? streamVisualResponse;
+  const responseId = `investigation-${episodeId}`;
+  const title = titleFor(query);
+  const running: VisualResponseData = {
+    id: responseId,
+    query,
+    title,
+    verdict: "Three specialists are inspecting ClickHouse in parallel…",
+    status: "running",
+    specialists: SPECIALISTS.map((specialist) => specialist.label),
+    panels: [],
+  };
+  await publish(running);
+  const incidentSeed = await loadIncidentSeed(query);
 
-    const chats = SPECIALISTS.map(
-      (specialist) =>
-        new AgentChat<typeof trinetraSpecialistAgent>({
-          agent: "trinetra-specialist",
-          id: `${episodeId}-${specialist.lens}`,
-        }),
-    );
+  const chats = SPECIALISTS.map(
+    (specialist) =>
+      new AgentChat<typeof trinetraSpecialistAgent>({
+        agent: "trinetra-specialist",
+        id: `${episodeId}-${specialist.lens}`,
+      }),
+  );
 
-    const assignments = SPECIALISTS.map((specialist, index) => `LENS: ${specialist.lens}
+  const assignments = SPECIALISTS.map((specialist, index) => `LENS: ${specialist.lens}
 USER PROMPT: ${query}
 PRIORITY SIGNALS: ${priorityArms.join(", ")}
 EPISODE: ${episodeId}
@@ -297,68 +304,72 @@ but cross-reference other telemetry when the lens requires it. ${
     }
 Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
 
-    try {
-      const settled = await Promise.allSettled(
-        chats.map(async (specialistChat, index) => {
-          const stream = await specialistChat.sendMessage(assignments[index], {
-            abortSignal,
-          });
-          return stream.result();
-        }),
+  try {
+    const settled = await Promise.allSettled(
+      chats.map(async (specialistChat, index) => {
+        const stream = await specialistChat.sendMessage(assignments[index], {
+          abortSignal,
+        });
+        return stream.result();
+      }),
+    );
+
+    const panels: VisualPanel[] = [];
+    const unavailable: string[] = [];
+    settled.forEach((result, index) => {
+      if (result.status === "rejected") {
+        unavailable.push(`${SPECIALISTS[index].label} failed`);
+        return;
+      }
+      const rawSubmission = extractSubmission(result.value);
+      const fallback = fallbackFromIncidentSeed(
+        incidentSeed,
+        SPECIALISTS[index].lens,
       );
+      const submission =
+        rawSubmission && isUsefulSubmission(rawSubmission)
+          ? rawSubmission
+          : fallback;
+      if (!submission) {
+        unavailable.push(`${SPECIALISTS[index].label} returned no visual`);
+        return;
+      }
+      if (submission.kind === "unavailable") {
+        unavailable.push(submission.reason);
+        return;
+      }
+      panels.push(toPanel(submission, SPECIALISTS[index], episodeId));
+    });
 
-      const panels: VisualPanel[] = [];
-      const unavailable: string[] = [];
-      settled.forEach((result, index) => {
-        if (result.status === "rejected") {
-          unavailable.push(`${SPECIALISTS[index].label} failed`);
-          return;
-        }
-        const rawSubmission = extractSubmission(result.value);
-        const fallback = fallbackFromIncidentSeed(
-          incidentSeed,
-          SPECIALISTS[index].lens,
-        );
-        const submission =
-          rawSubmission && isUsefulSubmission(rawSubmission)
-            ? rawSubmission
-            : fallback;
-        if (!submission) {
-          unavailable.push(`${SPECIALISTS[index].label} returned no visual`);
-          return;
-        }
-        if (submission.kind === "unavailable") {
-          unavailable.push(submission.reason);
-          return;
-        }
-        panels.push(toPanel(submission, SPECIALISTS[index], episodeId));
-      });
+    const verdict =
+      panels.find((panel) => panel.level === "overview")?.finding ??
+      panels[0]?.finding ??
+      unavailable[0] ??
+      "No supported visual could be built from the available ClickHouse data.";
+    const complete: VisualResponseData = {
+      id: responseId,
+      query,
+      title,
+      verdict,
+      status: "complete",
+      specialists: SPECIALISTS.map((specialist) => specialist.label),
+      panels,
+    };
+    await publish(complete);
 
-      const verdict =
-        panels.find((panel) => panel.level === "overview")?.finding ??
-        panels[0]?.finding ??
-        unavailable[0] ??
-        "No supported visual could be built from the available ClickHouse data.";
-      const complete: VisualResponseData = {
-        id: responseId,
-        title,
-        verdict,
-        status: "complete",
-        specialists: SPECIALISTS.map((specialist) => specialist.label),
-        panels,
-      };
-      await streamVisualResponse(complete);
-
-      return {
-        visualRendered: panels.length > 0,
-        panelCount: panels.length,
-        levels: panels.map((panel) => panel.level),
-        verdict,
-        unavailable,
-      };
-    } finally {
-      await Promise.all(chats.map((specialistChat) => specialistChat.close().catch(() => {})));
-    }
+    return {
+      visualRendered: panels.length > 0,
+      panelCount: panels.length,
+      levels: panels.map((panel) => panel.level),
+      verdict,
+      unavailable,
+      report: complete,
+    };
+  } finally {
+    await Promise.all(
+      chats.map((specialistChat) => specialistChat.close().catch(() => {})),
+    );
+  }
 }
 
 export const investigateWithTeam = tool({

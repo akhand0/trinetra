@@ -13,6 +13,7 @@ Built for the ClickHouse x Trigger.dev Virtual Summer Hackathon 2026.
 - Polished responsive incident canvas with progressive panels, root-cause confirmation, full-screen drill-downs, and a live investigation rail
 - Live OpenTelemetry telemetry path for production investigations
 - Durable `chat.agent()` implementation with Trigger.dev probe subtasks and root-streamed `data-panel` parts
+- Run-scoped typed report stream with live React progress and optional Resend delivery
 - Five substantive ClickHouse probes: latency shift, error clustering, deploy correlation, trace mining, and cardinality scan
 - Official ClickHouse MCP tool layer for live schema discovery and read-only SQL
 - Contextual Thompson sampling with logged action propensities
@@ -35,6 +36,8 @@ flowchart LR
     P --> C["Cardinality task"]
     L & E & D & T & C --> CH["ClickHouse telemetry"]
     L & E & D & T & C --> UI
+    UI --> VR["Visual report task + typed progress stream"]
+    VR --> EM["Optional Resend delivery"]
     UI --> R["Panel reward events + propensity"]
     R --> CHR["ClickHouse reward_events"]
     CHR --> MV["posterior materialized view"]
@@ -66,6 +69,7 @@ Copy `.env.example` to `.env.local` and configure:
   OpenAI-compatible Chat Completions API)
 - `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DATABASE`
 - `POSTGRES_URL` for ClickHouse-managed Postgres
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` only when email delivery is wanted
 
 Apply the policy schema and the live OpenTelemetry compatibility views:
 
@@ -124,6 +128,7 @@ The Trigger.dev implementation follows the current managed-agent and subtask str
   when configured, and the agent is told to prefer it and fall back to raw SQL.
 - `trigger/probes/*.ts` are typed `schemaTask` probe subtasks.
 - Each subtask uses `chat.stream.writer({ target: "root" })` to stream custom visual data parts.
+- `trigger/visual-report.ts` reuses the investigation team, emits run-scoped typed progress, and optionally emails the compact visual findings.
 
 ## Policy and reward design
 
