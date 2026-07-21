@@ -5,7 +5,7 @@
   "description": "The third eye for your telemetry - an adaptive visual incident investigator.",
   "license": "MIT",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack --disable-source-maps",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -19,7 +19,7 @@
     "@ai-sdk/openai": "^4.0.16",
     "@ai-sdk/react": "^4.0.34",
     "@clickhouse/client": "^1.23.1",
-    "@trigger.dev/sdk": "^4.5.4",
+    "@trigger.dev/sdk": "4.5.5",
     "ai": "^7.0.31",
     "lucide-react": "^0.525.0",
     "next": "16.2.10",
@@ -35,6 +35,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "16.2.10",
+    "trigger.dev": "^4.5.5",
     "tsx": "^4.20.3",
     "typescript": "^5.9.0",
     "vitest": "^3.2.4"

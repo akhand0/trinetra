@@ -484,7 +484,6 @@ export function TrinetraDashboard() {
   const [expandedPanel, setExpandedPanel] = useState<PanelData | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const startedRef = useRef(false);
   const activeRequest = useRef<AbortController | null>(null);
   const queryInputRef = useRef<HTMLInputElement>(null);
 
@@ -615,12 +614,13 @@ export function TrinetraDashboard() {
   }, []);
 
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    const timer = window.setTimeout(
-      () => void runInvestigation(DEFAULT_QUERY),
-      260,
-    );
+    const prompt =
+      new URLSearchParams(window.location.search).get("prompt")?.trim() ||
+      DEFAULT_QUERY;
+    const timer = window.setTimeout(() => {
+      setQuery(prompt);
+      void runInvestigation(prompt);
+    }, 260);
     return () => {
       window.clearTimeout(timer);
       activeRequest.current?.abort();

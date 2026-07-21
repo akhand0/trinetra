@@ -12,7 +12,10 @@ export function AgentHome() {
   function startTesting() {
     const prompt = message.trim();
     if (!prompt) return;
-    router.push(`/live?prompt=${encodeURIComponent(prompt)}`);
+    const requestId = crypto.randomUUID();
+    router.push(
+      `/live?prompt=${encodeURIComponent(prompt)}&request=${encodeURIComponent(requestId)}`,
+    );
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

@@ -4,33 +4,48 @@ import { useChat } from "@ai-sdk/react";
 import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
 import { ArrowLeft, Send, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
 import { ChartSpecView } from "@/components/visualizations";
 import { safeParseChartSpec } from "@/lib/telemetry/chart-spec";
 import type { trinetraAgent } from "@/trigger/agent";
 
-export function TriggerLiveChat() {
+export function TriggerLiveChat({
+  initialPrompt,
+  requestId,
+}: {
+  initialPrompt?: string;
+  requestId?: string;
+}) {
+  const initialPromptSent = useRef(false);
   const [input, setInput] = useState(
-    "Why did checkout latency spike after Tuesday's deploy?",
+    initialPrompt ? "" : "Why did checkout latency spike after Tuesday's deploy?",
   );
-  useEffect(() => {
-    const prompt = new URLSearchParams(window.location.search).get("prompt");
-    if (prompt) setInput(prompt);
-  }, []);
   const transport = useTriggerChatTransport<typeof trinetraAgent>({
     task: "trinetra-agent",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
     startSession: ({ chatId, clientData }) =>
       startChatSession({ chatId, clientData }),
   });
-  const { messages, sendMessage, status } = useChat({ transport });
+  const { error, messages, sendMessage, status } = useChat({ transport });
+
+  useEffect(() => {
+    const prompt = initialPrompt?.trim();
+    if (!prompt || initialPromptSent.current) return;
+
+    const storageKey = `trinetra-agent-request:${requestId ?? prompt}`;
+    if (window.sessionStorage.getItem(storageKey)) return;
+
+    initialPromptSent.current = true;
+    window.sessionStorage.setItem(storageKey, "sent");
+    void sendMessage({ text: prompt });
+  }, [initialPrompt, requestId, sendMessage]);
 
   return (
     <main className="live-page">
       <header>
-        <Link href="/dashboard">
-          <ArrowLeft size={14} /> Back to canvas
+        <Link href="/">
+          <ArrowLeft size={14} /> Back
         </Link>
         <span>
           <Zap size={13} /> Trigger.dev durable session
@@ -74,6 +89,11 @@ export function TriggerLiveChat() {
             </article>
           ))}
           {status === "streaming" && <div className="live-thinking">Investigating…</div>}
+          {error && (
+            <div className="live-thinking" role="alert">
+              The agent run failed: {error.message}
+            </div>
+          )}
         </div>
         <form
           className="live-composer"
