@@ -4,7 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
 import { ArrowLeft, Send, Sparkles, Zap } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
 import { ChartSpecView } from "@/components/visualizations";
 import { safeParseChartSpec } from "@/lib/telemetry/chart-spec";
@@ -14,6 +14,10 @@ export function TriggerLiveChat() {
   const [input, setInput] = useState(
     "Why did checkout latency spike after Tuesday's deploy?",
   );
+  useEffect(() => {
+    const prompt = new URLSearchParams(window.location.search).get("prompt");
+    if (prompt) setInput(prompt);
+  }, []);
   const transport = useTriggerChatTransport<typeof trinetraAgent>({
     task: "trinetra-agent",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
@@ -25,7 +29,7 @@ export function TriggerLiveChat() {
   return (
     <main className="live-page">
       <header>
-        <Link href="/">
+        <Link href="/dashboard">
           <ArrowLeft size={14} /> Back to canvas
         </Link>
         <span>
