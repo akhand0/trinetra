@@ -29,9 +29,70 @@ export const chartSpecSchema = z.object({
 
 export type ChartSpec = z.infer<typeof chartSpecSchema>;
 
+export const visualCellSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+]);
+
+export const tableSpecSchema = z.object({
+  title: z.string().min(1).max(120),
+  columns: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(64),
+        label: z.string().min(1).max(64),
+      }),
+    )
+    .min(1)
+    .max(10),
+  rows: z
+    .array(z.record(z.string(), visualCellSchema))
+    .min(1)
+    .max(200),
+  defaultSort: z
+    .object({
+      key: z.string().min(1).max(64),
+      direction: z.enum(["asc", "desc"]),
+    })
+    .optional(),
+  searchPlaceholder: z.string().max(80).optional(),
+});
+
+export type TableSpec = z.infer<typeof tableSpecSchema>;
+
+export const metricSpecSchema = z.object({
+  title: z.string().min(1).max(120),
+  items: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(64),
+        value: z.string().min(1).max(64),
+        detail: z.string().max(120).optional(),
+        trend: z.string().max(32).optional(),
+        tone: z.enum(["good", "warning", "bad", "neutral"]).default("neutral"),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+export type MetricSpec = z.infer<typeof metricSpecSchema>;
+
 /** Validates untrusted input; returns null instead of throwing so a bad spec
  * degrades to an empty state rather than crashing the turn. */
 export function safeParseChartSpec(input: unknown): ChartSpec | null {
   const result = chartSpecSchema.safeParse(input);
+  return result.success ? result.data : null;
+}
+
+export function safeParseTableSpec(input: unknown): TableSpec | null {
+  const result = tableSpecSchema.safeParse(input);
+  return result.success ? result.data : null;
+}
+
+export function safeParseMetricSpec(input: unknown): MetricSpec | null {
+  const result = metricSpecSchema.safeParse(input);
   return result.success ? result.data : null;
 }

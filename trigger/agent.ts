@@ -11,7 +11,11 @@ import { classifyContext } from "@/lib/policy/context";
 import { applyEvidence, nextArm, type ProbeEvidence } from "@/lib/policy/steering";
 import { chooseArms } from "@/lib/policy/thompson";
 import { createEpisode, recordDecision } from "@/lib/postgres/episodes";
-import { chartSpecSchema } from "@/lib/telemetry/chart-spec";
+import {
+  chartSpecSchema,
+  metricSpecSchema,
+  tableSpecSchema,
+} from "@/lib/telemetry/chart-spec";
 import { panelTemplate } from "@/lib/telemetry/panels";
 import type { PanelData, Posterior, ProbeArm } from "@/lib/types";
 import { cardinalityScanProbe } from "./probes/cardinality-scan";
@@ -105,6 +109,29 @@ function probeEvidenceFromSteps(steps: unknown): ProbeEvidence[] {
   return out;
 }
 
+/** Collect every completed or requested tool name across SDK step shapes. */
+function toolNamesFromSteps(steps: unknown): Set<string> {
+  const names = new Set<string>();
+  if (!Array.isArray(steps)) return names;
+
+  for (const step of steps) {
+    const sources = [
+      (step as { content?: unknown }).content,
+      (step as { toolCalls?: unknown }).toolCalls,
+      (step as { toolResults?: unknown }).toolResults,
+    ];
+    for (const source of sources) {
+      if (!Array.isArray(source)) continue;
+      for (const part of source) {
+        const name = (part as { toolName?: unknown; name?: unknown }).toolName ??
+          (part as { name?: unknown }).name;
+        if (typeof name === "string") names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
 function latestUserQuery(messages: ModelMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
@@ -166,7 +193,61 @@ const tools = {
         spec,
       };
       await streamChartPanel(panel, toolCallId ?? `chart-${episodeId}`);
-      return { finding };
+      return { finding, visualRendered: true };
+    },
+  }),
+  renderTable: tool({
+    description:
+      "Render an inventory or raw query result as a searchable, sortable data " +
+      "explorer. Use this for table lists, schemas, traces, logs, and any answer " +
+      "where users need to inspect individual rows. Never replace it with a " +
+      "markdown table or numbered list.",
+    inputSchema: tableSpecSchema.extend({
+      episodeId: z.string(),
+      arm: z.enum(PROBE_ARMS).optional(),
+      finding: z.string().max(180),
+    }),
+    execute: async (input, { toolCallId }) => {
+      const {
+        episodeId,
+        arm = "cardinality_scan",
+        finding,
+        ...table
+      } = input;
+      const panel: PanelData = {
+        ...panelTemplate(arm),
+        kind: "table",
+        title: table.title,
+        eyebrow: "Interactive explorer",
+        finding,
+        table,
+      };
+      await streamChartPanel(panel, toolCallId ?? `table-${episodeId}`);
+      return { finding, visualRendered: true };
+    },
+  }),
+  renderMetrics: tool({
+    description:
+      "Render a compact visual verdict or KPI comparison. Use this when the " +
+      "answer is best expressed as a few headline signals, statuses, deltas, " +
+      "or a go/no-go decision rather than paragraphs.",
+    inputSchema: metricSpecSchema.extend({
+      episodeId: z.string(),
+      arm: z.enum(PROBE_ARMS).optional(),
+      finding: z.string().max(180),
+    }),
+    execute: async (input, { toolCallId }) => {
+      const { episodeId, arm = "latency_shift", finding, ...metrics } = input;
+      const panel: PanelData = {
+        ...panelTemplate(arm),
+        kind: "metrics",
+        title: metrics.title,
+        eyebrow: "Signal summary",
+        finding,
+        metrics,
+      };
+      await streamChartPanel(panel, toolCallId ?? `metrics-${episodeId}`);
+      return { finding, visualRendered: true };
     },
   }),
 };
@@ -252,25 +333,48 @@ rewards tie back to this episode.
 
 ${toolSurfaceNote}
 
-For every incident question:
+For every data or incident question:
 1. Inspect telemetry through the MCP tools before reaching a conclusion.
 2. Use list_tables to discover available telemetry, then use run_query with
    read-only SELECT statements to investigate logs, metrics, and spans.
 3. Run the policy-selected probes above to communicate the MCP evidence.
-4. When a query returns rows worth seeing, call renderChart to compose a
-   visualization from those actual rows — pick the mark and encodings that
-   best express the finding rather than defaulting to a fixed panel shape.
-5. Use the evidence to state one concise likely root cause and confidence.
-6. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
+4. The answer MUST include a rendered visual built from the actual tool data:
+   - inventories, schemas, logs, traces, or raw rows -> renderTable
+   - trends, distributions, or comparisons -> renderChart
+   - KPIs, verdicts, deltas, or status summaries -> renderMetrics
+5. Never use a markdown table, numbered data dump, or prose list in place of a
+   visual. If the user asks to list tables, call list_tables then renderTable.
+6. Use the evidence to state one concise likely root cause or takeaway.
+7. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
 
-Never issue writes, DDL, or destructive SQL. Keep prose to at most three short
-sentences. Panels stream directly from tools.`,
+Never issue writes, DDL, or destructive SQL. After rendering, keep prose to at
+most one short sentence (roughly 12 words). The visual is the answer; words are
+only the caption. Greetings and non-data conversation may remain plain text.
+Panels stream directly from tools.`,
         messages,
         tools: agentTools,
         abortSignal: signal,
         stopWhen: stepCountIs(12),
         prepareStep: async ({ steps }) => {
           try {
+            const calledTools = toolNamesFromSteps(steps);
+            const asksForInventory =
+              /\b(list|show|what|which)\b[\s\S]{0,40}\b(tables?|schema)\b/i.test(
+                query,
+              );
+            if (
+              asksForInventory &&
+              calledTools.has("list_tables") &&
+              !calledTools.has("renderTable")
+            ) {
+              return {
+                toolChoice: {
+                  type: "tool" as const,
+                  toolName: "renderTable" as const,
+                },
+              };
+            }
+
             const evidence = probeEvidenceFromSteps(steps);
             for (const item of evidence) executed.add(item.arm);
 

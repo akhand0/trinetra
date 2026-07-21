@@ -1,6 +1,11 @@
 "use client";
 
-import type { ChartSpec } from "@/lib/telemetry/chart-spec";
+import { useMemo, useState } from "react";
+import type {
+  ChartSpec,
+  MetricSpec,
+  TableSpec,
+} from "@/lib/telemetry/chart-spec";
 import type {
   HeatCell,
   Posterior,
@@ -45,6 +50,25 @@ export function ChartSpecView({
   const seriesKeys = seriesField
     ? Array.from(new Set(spec.data.map((row) => String(row[seriesField] ?? ""))))
     : ["__single"];
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [hovered, setHovered] = useState<{
+    label: string;
+    value: number;
+    series: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const visibleSeries = seriesKeys.filter((key) => !hiddenSeries.has(key));
+
+  function toggleSeries(key: string) {
+    setHiddenSeries((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else if (current.size < seriesKeys.length - 1) next.add(key);
+      return next;
+    });
+    setHovered(null);
+  }
 
   const num = (value: unknown) => {
     const n = Number(value);
@@ -75,12 +99,34 @@ export function ChartSpecView({
   );
 
   return (
-    <svg
-      className="chart-svg"
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={spec.title ?? `${spec.mark} chart`}
-    >
+    <div className="visual-chart">
+      {seriesField && seriesKeys.length > 1 && (
+        <div className="visual-chart-legend" aria-label="Chart series">
+          {seriesKeys.map((key, index) => (
+            <button
+              className={hiddenSeries.has(key) ? "muted" : ""}
+              type="button"
+              key={key}
+              aria-pressed={!hiddenSeries.has(key)}
+              onClick={() => toggleSeries(key)}
+            >
+              <i
+                style={{
+                  backgroundColor: SERIES_COLORS[index % SERIES_COLORS.length],
+                }}
+              />
+              {key}
+            </button>
+          ))}
+        </div>
+      )}
+      <svg
+        className="chart-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={spec.title ?? `${spec.mark} chart`}
+        onMouseLeave={() => setHovered(null)}
+      >
       {[0, 0.5, 1].map((position) => {
         const value = minY + (maxY - minY) * (1 - position);
         const y = pad.top + position * plotH;
@@ -100,13 +146,15 @@ export function ChartSpecView({
         );
       })}
 
-      {seriesKeys.map((key, seriesIndex) => {
+      {visibleSeries.map((key) => {
+        const seriesIndex = seriesKeys.indexOf(key);
         const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
         const rows = rowsFor(key);
         const points = rows.map((row) => ({
           x: xOf(String(row[xField] ?? "")),
           y: yOf(num(row[yField])),
           raw: num(row[yField]),
+          label: String(row[xField] ?? ""),
         }));
 
         if (spec.mark === "bar") {
@@ -125,6 +173,15 @@ export function ChartSpecView({
                     fill={color}
                     opacity="0.85"
                     rx="1.5"
+                    onMouseEnter={() =>
+                      setHovered({
+                        label: point.label,
+                        value: point.raw,
+                        series: key,
+                        x: point.x,
+                        y: point.y,
+                      })
+                    }
                   />
                 );
               })}
@@ -143,6 +200,15 @@ export function ChartSpecView({
                   r="3.5"
                   fill={color}
                   opacity="0.9"
+                  onMouseEnter={() =>
+                    setHovered({
+                      label: point.label,
+                      value: point.raw,
+                      series: key,
+                      x: point.x,
+                      y: point.y,
+                    })
+                  }
                 />
               ))}
             </g>
@@ -175,6 +241,15 @@ export function ChartSpecView({
                 fill={color}
                 stroke="#151922"
                 strokeWidth="1.5"
+                onMouseEnter={() =>
+                  setHovered({
+                    label: point.label,
+                    value: point.raw,
+                    series: key,
+                    x: point.x,
+                    y: point.y,
+                  })
+                }
               />
             ))}
           </g>
@@ -202,7 +277,157 @@ export function ChartSpecView({
           </text>
         ) : null,
       )}
-    </svg>
+
+      {hovered && (
+        <g
+          className="visual-chart-tooltip"
+          transform={`translate(${Math.min(Math.max(hovered.x - 58, 4), width - 124)} ${Math.max(hovered.y - 51, 5)})`}
+          pointerEvents="none"
+        >
+          <rect width="120" height="42" rx="7" />
+          <text x="9" y="16">
+            {hovered.label.length > 17
+              ? `${hovered.label.slice(0, 16)}…`
+              : hovered.label}
+          </text>
+          <text className="value" x="9" y="32">
+            {seriesField ? `${hovered.series}: ` : ""}
+            {hovered.value.toLocaleString()}
+          </text>
+        </g>
+      )}
+      </svg>
+    </div>
+  );
+}
+
+function compareVisualCells(
+  left: string | number | boolean | null,
+  right: string | number | boolean | null,
+) {
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return String(left ?? "").localeCompare(String(right ?? ""), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+export function TableExplorer({ spec }: { spec: TableSpec }) {
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState(spec.defaultSort);
+  const [visibleRows, setVisibleRows] = useState(12);
+
+  const rows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    const filtered = normalizedQuery
+      ? spec.rows.filter((row) =>
+          spec.columns.some((column) =>
+            String(row[column.key] ?? "")
+              .toLowerCase()
+              .includes(normalizedQuery),
+          ),
+        )
+      : spec.rows;
+
+    if (!sort) return filtered;
+    return [...filtered].sort((left, right) => {
+      const comparison = compareVisualCells(left[sort.key], right[sort.key]);
+      return sort.direction === "asc" ? comparison : -comparison;
+    });
+  }, [query, sort, spec.columns, spec.rows]);
+
+  function toggleSort(key: string) {
+    setSort((current) => ({
+      key,
+      direction:
+        current?.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  return (
+    <div className="visual-table-explorer">
+      <div className="visual-table-toolbar">
+        <label>
+          <span className="sr-only">Filter {spec.title}</span>
+          <input
+            type="search"
+            value={query}
+            placeholder={spec.searchPlaceholder ?? "Filter results…"}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setVisibleRows(12);
+            }}
+          />
+        </label>
+        <span>
+          {rows.length} {rows.length === 1 ? "result" : "results"}
+        </span>
+      </div>
+      <div className="visual-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              {spec.columns.map((column) => (
+                <th key={column.key}>
+                  <button type="button" onClick={() => toggleSort(column.key)}>
+                    {column.label}
+                    <span aria-hidden="true">
+                      {sort?.key === column.key
+                        ? sort.direction === "asc"
+                          ? "↑"
+                          : "↓"
+                        : "↕"}
+                    </span>
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, visibleRows).map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {spec.columns.map((column) => (
+                  <td key={column.key}>{String(row[column.key] ?? "—")}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > visibleRows && (
+        <button
+          className="visual-table-more"
+          type="button"
+          onClick={() => setVisibleRows((count) => count + 20)}
+        >
+          Show {Math.min(20, rows.length - visibleRows)} more
+        </button>
+      )}
+      {rows.length === 0 && (
+        <div className="visual-table-empty">No matching rows</div>
+      )}
+    </div>
+  );
+}
+
+export function MetricGrid({ spec }: { spec: MetricSpec }) {
+  return (
+    <div className="visual-metric-grid">
+      {spec.items.map((item) => (
+        <article className={`tone-${item.tone}`} key={item.label}>
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+          {(item.trend || item.detail) && (
+            <small>
+              {item.trend && <b>{item.trend}</b>}
+              {item.detail}
+            </small>
+          )}
+        </article>
+      ))}
+    </div>
   );
 }
 

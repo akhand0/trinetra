@@ -8,8 +8,10 @@ import type { FormEvent, KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
-import { ChartSpecView } from "@/components/visualizations";
-import { safeParseChartSpec } from "@/lib/telemetry/chart-spec";
+import {
+  VisualResponse,
+  type VisualPanelPayload,
+} from "@/components/visual-response";
 import type { trinetraAgent } from "@/trigger/agent";
 
 function normalizeAgentMarkdown(text: string) {
@@ -80,7 +82,14 @@ export function AgentHome() {
             aria-live="polite"
           >
             {messages.map((chatMessage) => (
-              <article className={chatMessage.role} key={chatMessage.id}>
+              <article
+                className={`${chatMessage.role}${
+                  chatMessage.parts.some((part) => part.type === "data-panel")
+                    ? " has-visual"
+                    : ""
+                }`}
+                key={chatMessage.id}
+              >
                 <span>{chatMessage.role === "user" ? "You" : "Trinetra"}</span>
                 {chatMessage.parts.map((part, index) => {
                   if (part.type === "text") {
@@ -95,21 +104,11 @@ export function AgentHome() {
                     );
                   }
                   if (part.type === "data-panel") {
-                    const data = part.data as {
-                      title?: string;
-                      finding?: string;
-                      spec?: unknown;
-                    };
-                    const spec = safeParseChartSpec(data.spec);
                     return (
-                      <div className="agent-data-part" key={index}>
-                        <small>
-                          {spec ? "AGENT-COMPOSED CHART" : "STREAMED PANEL"}
-                        </small>
-                        <b>{data.title ?? "Probe panel"}</b>
-                        {spec && <ChartSpecView spec={spec} compact />}
-                        <p>{data.finding}</p>
-                      </div>
+                      <VisualResponse
+                        data={part.data as VisualPanelPayload}
+                        key={index}
+                      />
                     );
                   }
                   return null;

@@ -1,4 +1,8 @@
-import type { ChartSpec } from "@/lib/telemetry/chart-spec";
+import type {
+  ChartSpec,
+  MetricSpec,
+  TableSpec,
+} from "@/lib/telemetry/chart-spec";
 
 export type ProbeArm =
   | "latency_shift"
@@ -22,7 +26,9 @@ export type PanelKind =
   | "errors"
   | "cardinality"
   | "deploy"
-  | "chart";
+  | "chart"
+  | "table"
+  | "metrics";
 
 export type ProbeStatus = "queued" | "running" | "complete" | "adapted";
 
@@ -65,6 +71,10 @@ export interface PanelData {
   /** Agent-composed visualization; when present, takes precedence over the
    * pre-made kind renderers. */
   spec?: ChartSpec;
+  /** Searchable, sortable result explorer for inventories and raw rows. */
+  table?: TableSpec;
+  /** High-signal KPI/verdict cards for compact summaries. */
+  metrics?: MetricSpec;
   stats?: Array<{ label: string; value: string; tone?: "bad" | "good" | "neutral" }>;
 }
 
