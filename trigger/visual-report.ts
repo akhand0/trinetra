@@ -1,6 +1,10 @@
 import { task } from "@trigger.dev/sdk";
 import { Resend } from "resend";
 import {
+  renderVisualReportPdf,
+  visualReportPdfFilename,
+} from "@/lib/reports/visual-report-pdf";
+import {
   visualResponseSchema,
   type VisualResponseData,
 } from "@/lib/telemetry/visual-response";
@@ -22,25 +26,17 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function reportHtml(report: VisualResponseData, runId: string) {
-  const panels = report.panels
-    .map(
-      (panel) => `
-        <article style="margin:16px 0;padding:18px;border:1px solid #e8dcf3;border-radius:14px">
-          <p style="margin:0 0 5px;color:#8f43ca;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">${escapeHtml(panel.eyebrow)}</p>
-          <h2 style="margin:0 0 8px;font-size:18px">${escapeHtml(panel.title)}</h2>
-          <p style="margin:0;color:#4f4955;line-height:1.5">${escapeHtml(panel.finding)}</p>
-        </article>`,
-    )
-    .join("");
-
+function reportEmailHtml(report: VisualResponseData, runId: string) {
   return `
-    <main style="max-width:680px;margin:0 auto;padding:32px;font-family:Inter,Arial,sans-serif;color:#211c25">
-      <p style="margin:0;color:#8f43ca;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Trinetra visual report</p>
-      <h1 style="margin:10px 0 8px;font-size:30px;letter-spacing:-.03em">${escapeHtml(report.title)}</h1>
-      <p style="margin:0 0 24px;color:#5d5662;font-size:16px;line-height:1.55">${escapeHtml(report.verdict)}</p>
-      ${panels}
-      <p style="margin-top:28px;color:#8a838e;font-size:11px">Trigger.dev run ${escapeHtml(runId)}</p>
+    <main style="max-width:620px;margin:0 auto;padding:32px;font-family:Inter,Arial,sans-serif;color:#211c25">
+      <p style="margin:0;color:#8f43ca;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Trinetra PDF report</p>
+      <h1 style="margin:10px 0 8px;font-size:28px;letter-spacing:-.03em">${escapeHtml(report.title)}</h1>
+      <p style="margin:0 0 22px;color:#5d5662;font-size:15px;line-height:1.55">${escapeHtml(report.verdict)}</p>
+      <div style="padding:16px 18px;border:1px solid #e8dcf3;border-radius:12px;background:#faf7fc">
+        <strong>The complete visual report is attached as a PDF.</strong>
+        <p style="margin:7px 0 0;color:#6f6874">${report.panels.length} visual level${report.panels.length === 1 ? "" : "s"}: metrics, charts, and evidence tables.</p>
+      </div>
+      <p style="margin-top:24px;color:#8a838e;font-size:11px">Trigger.dev run ${escapeHtml(runId)}</p>
     </main>`;
 }
 
@@ -106,18 +102,26 @@ export const visualReportTask = task({
         });
 
         try {
+          const pdf = await renderVisualReportPdf(report, ctx.run.id);
           const delivery = await new Resend(apiKey).emails.send({
             from,
             to: email,
-            subject: `Trinetra report: ${report.title}`,
-            html: reportHtml(report, ctx.run.id),
+            subject: `Trinetra PDF report: ${report.title}`,
+            html: reportEmailHtml(report, ctx.run.id),
+            attachments: [
+              {
+                filename: visualReportPdfFilename(report),
+                content: pdf,
+                contentType: "application/pdf",
+              },
+            ],
           });
 
           if (delivery.error) {
             throw new Error(delivery.error.message);
           }
           emailed = true;
-          deliveryMessage = `Visual report sent to ${email}`;
+          deliveryMessage = `PDF report sent to ${email}`;
         } catch (error) {
           deliveryMessage = `Report ready — email delivery failed: ${
             error instanceof Error ? error.message : "unknown error"

@@ -13,7 +13,7 @@ Built for the ClickHouse x Trigger.dev Virtual Summer Hackathon 2026.
 - Polished responsive incident canvas with progressive panels, root-cause confirmation, full-screen drill-downs, and a live investigation rail
 - Live OpenTelemetry telemetry path for production investigations
 - Durable `chat.agent()` implementation with Trigger.dev probe subtasks and root-streamed `data-panel` parts
-- Run-scoped typed report stream with live React progress and optional Resend delivery
+- Run-scoped typed report stream with live React progress and optional full PDF delivery through Resend
 - Five substantive ClickHouse probes: latency shift, error clustering, deploy correlation, trace mining, and cardinality scan
 - Official ClickHouse MCP tool layer for live schema discovery and read-only SQL
 - Contextual Thompson sampling with logged action propensities
@@ -37,7 +37,8 @@ flowchart LR
     L & E & D & T & C --> CH["ClickHouse telemetry"]
     L & E & D & T & C --> UI
     UI --> VR["Visual report task + typed progress stream"]
-    VR --> EM["Optional Resend delivery"]
+    VR --> PDF["Vector PDF composer"]
+    PDF --> EM["Optional Resend delivery"]
     UI --> R["Panel reward events + propensity"]
     R --> CHR["ClickHouse reward_events"]
     CHR --> MV["posterior materialized view"]
@@ -128,7 +129,8 @@ The Trigger.dev implementation follows the current managed-agent and subtask str
   when configured, and the agent is told to prefer it and fall back to raw SQL.
 - `trigger/probes/*.ts` are typed `schemaTask` probe subtasks.
 - Each subtask uses `chat.stream.writer({ target: "root" })` to stream custom visual data parts.
-- `trigger/visual-report.ts` reuses the investigation team, emits run-scoped typed progress, and optionally emails the compact visual findings.
+- `trigger/visual-report.ts` reuses the investigation team, emits run-scoped typed progress, and optionally emails the whole report as a multi-page PDF attachment.
+- `lib/reports/visual-report-pdf.ts` turns every metrics, chart, and evidence panel into a print-ready vector report with a cover, contents, sources, and page numbers.
 
 ## Policy and reward design
 
