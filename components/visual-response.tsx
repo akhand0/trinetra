@@ -1,6 +1,12 @@
 "use client";
 
-import { Maximize2, Minimize2, Sparkles } from "lucide-react";
+import {
+  BrainCircuit,
+  Layers3,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+} from "lucide-react";
 import { useState } from "react";
 import {
   safeParseChartSpec,
@@ -12,6 +18,10 @@ import {
   MetricGrid,
   TableExplorer,
 } from "@/components/visualizations";
+import {
+  safeParseVisualResponse,
+  type VisualPanel,
+} from "@/lib/telemetry/visual-response";
 
 export type VisualPanelPayload = {
   title?: string;
@@ -21,6 +31,7 @@ export type VisualPanelPayload = {
   spec?: unknown;
   table?: unknown;
   metrics?: unknown;
+  source?: string;
 };
 
 export function VisualResponse({ data }: { data: VisualPanelPayload }) {
@@ -57,12 +68,18 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
         {table && <TableExplorer spec={table} />}
         {metrics && <MetricGrid spec={metrics} />}
         {!hasVisual && (
-          <div className="agent-visual-loading">
-            <i />
+          <div
+            className={
+              data.status === "running"
+                ? "agent-visual-loading"
+                : "agent-visual-invalid"
+            }
+          >
+            {data.status === "running" ? <i /> : <Layers3 size={20} />}
             <span>
               {data.status === "running"
                 ? "Building the visual response…"
-                : data.finding || "Visual probe complete"}
+                : data.finding || "This visual could not be validated"}
             </span>
           </div>
         )}
@@ -72,7 +89,78 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
         <footer>
           <Sparkles size={13} />
           <span>{data.finding}</span>
+          {data.source && <small>{data.source}</small>}
         </footer>
+      )}
+    </section>
+  );
+}
+
+function panelPayload(panel: VisualPanel): VisualPanelPayload {
+  if (panel.kind === "chart") {
+    return { ...panel, status: "complete", spec: panel.spec };
+  }
+  if (panel.kind === "table") {
+    return { ...panel, status: "complete", table: panel.table };
+  }
+  return { ...panel, status: "complete", metrics: panel.metrics };
+}
+
+export function VisualResponseGroup({ data }: { data: unknown }) {
+  const response = safeParseVisualResponse(data);
+
+  if (!response) {
+    return (
+      <section className="agent-visual-response invalid" role="alert">
+        <Layers3 size={20} />
+        The multi-panel response could not be validated.
+      </section>
+    );
+  }
+
+  return (
+    <section className="agent-visual-response">
+      <header>
+        <div className="agent-response-heading">
+          <span>
+            <BrainCircuit size={14} /> Multi-agent investigation
+          </span>
+          <h2>{response.title}</h2>
+          <p>{response.verdict}</p>
+        </div>
+        <div className="agent-specialists" aria-label="Investigation specialists">
+          {response.specialists.map((specialist) => (
+            <span key={specialist}>{specialist}</span>
+          ))}
+        </div>
+      </header>
+
+      {response.status === "running" ? (
+        <div className="agent-team-progress" role="status">
+          {response.specialists.map((specialist, index) => (
+            <div key={specialist}>
+              <i style={{ animationDelay: `${index * 140}ms` }} />
+              <span>{specialist}</span>
+              <small>Inspecting ClickHouse…</small>
+            </div>
+          ))}
+        </div>
+      ) : response.panels.length > 0 ? (
+        <div className="agent-response-grid">
+          {response.panels.map((panel) => (
+            <div
+              className={`agent-response-panel level-${panel.level} span-${panel.span}`}
+              key={panel.id}
+            >
+              <VisualResponse data={panelPayload(panel)} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="agent-response-empty">
+          <Layers3 size={20} />
+          No visual was supportable from the available ClickHouse data.
+        </div>
       )}
     </section>
   );

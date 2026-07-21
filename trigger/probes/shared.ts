@@ -1,5 +1,6 @@
 import { ai, chat } from "@trigger.dev/sdk/ai";
 import { clickhouse, hasClickHouseConfig } from "@/lib/clickhouse/client";
+import type { VisualResponseData } from "@/lib/telemetry/visual-response";
 import type { PanelData, ProbeArm } from "@/lib/types";
 
 const probeQueries: Record<ProbeArm, string> = {
@@ -83,6 +84,24 @@ export async function streamChartPanel(
         type: "data-panel",
         id,
         data: { ...panel, status: "complete" },
+      });
+    },
+  });
+  await waitUntilComplete();
+}
+
+/** Upserts one ordered, multi-panel response composed by the investigation
+ * team. Reusing the response id replaces the running skeleton atomically. */
+export async function streamVisualResponse(
+  response: VisualResponseData,
+): Promise<void> {
+  const { waitUntilComplete } = chat.stream.writer({
+    target: "root",
+    execute: ({ write }) => {
+      write({
+        type: "data-visual-response",
+        id: response.id,
+        data: response,
       });
     },
   });

@@ -1,4 +1,3 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { ai, chat } from "@trigger.dev/sdk/ai";
 import { type ModelMessage, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
@@ -18,6 +17,11 @@ import {
 } from "@/lib/telemetry/chart-spec";
 import { panelTemplate } from "@/lib/telemetry/panels";
 import type { PanelData, Posterior, ProbeArm } from "@/lib/types";
+import {
+  investigateWithTeam,
+  runInvestigationTeam,
+} from "./investigation-team";
+import { trinetraModel } from "./model";
 import { cardinalityScanProbe } from "./probes/cardinality-scan";
 import { deployCorrelationProbe } from "./probes/deploy-correlation";
 import { errorClusterProbe } from "./probes/error-cluster";
@@ -32,18 +36,6 @@ const PROBE_ARMS = [
   "trace_mining",
   "cardinality_scan",
 ] as const;
-
-/** OpenRouter exposes an OpenAI-compatible Chat Completions endpoint. */
-const openrouter = createOpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
-  headers: {
-    ...(process.env.OPENROUTER_SITE_URL
-      ? { "HTTP-Referer": process.env.OPENROUTER_SITE_URL }
-      : {}),
-    "X-Title": "Trinetra",
-  },
-});
 
 type ProbeToolName =
   | "latencyShift"
@@ -144,6 +136,15 @@ function latestUserQuery(messages: ModelMessage[]): string {
       .trim();
   }
   return "";
+}
+
+function shouldUseInvestigationTeam(query: string) {
+  const simpleInventory =
+    /\b(list|show|what|which)\b[\s\S]{0,40}\b(tables?|schema)\b/i.test(query);
+  if (simpleInventory) return false;
+  return /\b(incident|details?|why|root\s*cause|slow|latency|error|trace|logs?|metrics?|compare|analysis|analy[sz]e|service|deploy|spike|regression|outage|culprit)\b/i.test(
+    query,
+  );
 }
 
 const tools = {
@@ -250,6 +251,7 @@ const tools = {
       return { finding, visualRendered: true };
     },
   }),
+  investigateWithTeam,
 };
 
 export const trinetraAgent = chat.agent({
@@ -304,6 +306,19 @@ export const trinetraAgent = chat.agent({
         ...panelTools,
         ...clickStackTools,
         ...clickHouseTools,
+        investigateWithTeam: tool({
+          description: investigateWithTeam.description ?? "",
+          inputSchema: z.object({}),
+          execute: async (_, { abortSignal }) =>
+            runInvestigationTeam(
+              {
+                query,
+                episodeId,
+                priorityArms: choices.map((choice) => choice.arm),
+              },
+              abortSignal,
+            ),
+        }),
       };
 
       const toolSurfaceNote =
@@ -315,11 +330,7 @@ first; fall back to the raw ClickHouse MCP SQL tools for the long tail.`
 
       return streamText({
         ...chat.toStreamTextOptions({ tools: agentTools }),
-        // OpenRouter currently speaks Chat Completions, so use the explicit
-        // chat model entry point rather than the Responses-oriented default.
-        model: openrouter.chat(
-          process.env.TRINETRA_MODEL ?? "openai/gpt-4o",
-        ),
+        model: trinetraModel(),
         system: `You are Trinetra, an incident investigation orchestrator.
 The response product is the visual canvas, not a wall of prose.
 
@@ -327,25 +338,30 @@ This turn was classified as context "${context}". The contextual Thompson
 policy sampled the following probes, in priority order:
 ${policyPlan}
 
-Run these probe tools first, in this order, before considering any other probe.
-Pass episodeId "${episodeId}" to every probe tool you call so its panels and
-rewards tie back to this episode.
+Use these sampled probes as priority signals, not predetermined conclusions.
+investigateWithTeam is already bound to the current prompt, episode
+"${episodeId}", and priority arms: ${choices
+          .map((choice) => choice.arm)
+          .join(", ")}. Call it without arguments.
 
 ${toolSurfaceNote}
 
-For every data or incident question:
-1. Inspect telemetry through the MCP tools before reaching a conclusion.
-2. Use list_tables to discover available telemetry, then use run_query with
-   read-only SELECT statements to investigate logs, metrics, and spans.
-3. Run the policy-selected probes above to communicate the MCP evidence.
-4. The answer MUST include a rendered visual built from the actual tool data:
+Choose the response depth from the prompt:
+1. For a simple inventory or schema question, inspect ClickHouse directly and
+   render one searchable table. This is intentionally a single-view answer.
+2. For incident detail, diagnosis, comparison, or "why" questions, call
+   investigateWithTeam exactly once. It runs verdict, trend, and evidence
+   specialists in parallel and composes every supported result into one ordered
+   multi-level canvas. Do not duplicate its panels with direct render calls.
+3. If a team specialist reports unavailable evidence, preserve the partial
+   answer. Never invent a missing trend or metric just to fill a slot.
+4. For direct single-view questions, choose the renderer from actual tool data:
    - inventories, schemas, logs, traces, or raw rows -> renderTable
    - trends, distributions, or comparisons -> renderChart
    - KPIs, verdicts, deltas, or status summaries -> renderMetrics
 5. Never use a markdown table, numbered data dump, or prose list in place of a
    visual. If the user asks to list tables, call list_tables then renderTable.
-6. Use the evidence to state one concise likely root cause or takeaway.
-7. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
+6. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
 
 Never issue writes, DDL, or destructive SQL. After rendering, keep prose to at
 most one short sentence (roughly 12 words). The visual is the answer; words are
@@ -358,6 +374,17 @@ Panels stream directly from tools.`,
         prepareStep: async ({ steps }) => {
           try {
             const calledTools = toolNamesFromSteps(steps);
+            if (
+              shouldUseInvestigationTeam(query) &&
+              !calledTools.has("investigateWithTeam")
+            ) {
+              return {
+                toolChoice: {
+                  type: "tool" as const,
+                  toolName: "investigateWithTeam" as const,
+                },
+              };
+            }
             const asksForInventory =
               /\b(list|show|what|which)\b[\s\S]{0,40}\b(tables?|schema)\b/i.test(
                 query,

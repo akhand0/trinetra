@@ -10,6 +10,7 @@ import remarkGfm from "remark-gfm";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
 import {
   VisualResponse,
+  VisualResponseGroup,
   type VisualPanelPayload,
 } from "@/components/visual-response";
 import type { trinetraAgent } from "@/trigger/agent";
@@ -84,31 +85,48 @@ export function AgentHome() {
             {messages.map((chatMessage) => (
               <article
                 className={`${chatMessage.role}${
-                  chatMessage.parts.some((part) => part.type === "data-panel")
+                  chatMessage.parts.some(
+                    (part) =>
+                      part.type === "data-panel" ||
+                      part.type === "data-visual-response",
+                  )
                     ? " has-visual"
+                    : ""
+                }${
+                  chatMessage.parts.some(
+                    (part) => part.type === "data-visual-response",
+                  )
+                    ? " has-composed-visual"
                     : ""
                 }`}
                 key={chatMessage.id}
               >
                 <span>{chatMessage.role === "user" ? "You" : "Trinetra"}</span>
                 {chatMessage.parts.map((part, index) => {
+                  const partKey =
+                    (part as { id?: string }).id ?? `${part.type}-${index}`;
                   if (part.type === "text") {
                     return chatMessage.role === "assistant" ? (
-                      <div className="agent-markdown" key={index}>
+                      <div className="agent-markdown" key={partKey}>
                         <Markdown remarkPlugins={[remarkGfm]}>
                           {normalizeAgentMarkdown(part.text)}
                         </Markdown>
                       </div>
                     ) : (
-                      <p key={index}>{part.text}</p>
+                      <p key={partKey}>{part.text}</p>
                     );
                   }
                   if (part.type === "data-panel") {
                     return (
                       <VisualResponse
                         data={part.data as VisualPanelPayload}
-                        key={index}
+                        key={partKey}
                       />
+                    );
+                  }
+                  if (part.type === "data-visual-response") {
+                    return (
+                      <VisualResponseGroup data={part.data} key={partKey} />
                     );
                   }
                   return null;
