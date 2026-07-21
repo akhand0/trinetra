@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
-import { MoreVertical, Send, Sparkles, Zap } from "lucide-react";
+import { MoreVertical, Send, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
@@ -55,7 +55,7 @@ export function AgentHome() {
 
       <section className={`agent-start${hasMessages ? " has-thread" : ""}`}>
         <h1>
-          {!hasMessages && <span>Type a message to start testing</span>}
+          {!hasMessages && <span>Welcome to</span>}
           <span className="agent-name">
             <i className="agent-badge" aria-hidden="true">
               <Sparkles size={22} fill="currentColor" strokeWidth={1.7} />
@@ -133,12 +133,8 @@ export function AgentHome() {
           />
           <p>Press Enter to send, Shift+Enter for new line</p>
           <button type="submit" disabled={isRunning || !message.trim()}>
-            {hasMessages ? (
-              <Send size={18} />
-            ) : (
-              <Zap size={22} fill="currentColor" />
-            )}
-            {isRunning ? "Thinking" : hasMessages ? "Send" : "Preload"}
+            <Send size={18} />
+            {isRunning ? "Thinking" : "Send"}
           </button>
         </form>
       </section>
