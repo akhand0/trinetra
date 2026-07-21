@@ -132,7 +132,11 @@ export function AgentHome() {
             onKeyDown={handleKeyDown}
           />
           <p>Press Enter to send, Shift+Enter for new line</p>
-          <button type="submit" disabled={isRunning || !message.trim()}>
+          <button
+            type="button"
+            disabled={isRunning || !message.trim()}
+            onClick={startTesting}
+          >
             <Send size={18} />
             {isRunning ? "Thinking" : "Send"}
           </button>
