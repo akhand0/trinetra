@@ -2,8 +2,8 @@
 
 import { useChat } from "@ai-sdk/react";
 import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
-import { MoreVertical, Sparkles, Zap } from "lucide-react";
-import { useState } from "react";
+import { MoreVertical, Send, Sparkles, Zap } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
 import { ChartSpecView } from "@/components/visualizations";
@@ -12,6 +12,7 @@ import type { trinetraAgent } from "@/trigger/agent";
 
 export function AgentHome() {
   const [message, setMessage] = useState("");
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const transport = useTriggerChatTransport<typeof trinetraAgent>({
     task: "trinetra-agent",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
@@ -20,6 +21,12 @@ export function AgentHome() {
   });
   const { error, messages, sendMessage, status } = useChat({ transport });
   const isRunning = status === "submitted" || status === "streaming";
+  const hasMessages = messages.length > 0;
+
+  useEffect(() => {
+    if (!hasMessages) return;
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [hasMessages, messages, status]);
 
   function startTesting() {
     const prompt = message.trim();
@@ -46,9 +53,9 @@ export function AgentHome() {
         <MoreVertical size={24} strokeWidth={2.5} />
       </button>
 
-      <section className={`agent-start${messages.length ? " has-thread" : ""}`}>
+      <section className={`agent-start${hasMessages ? " has-thread" : ""}`}>
         <h1>
-          <span>Type a message to start testing</span>
+          {!hasMessages && <span>Type a message to start testing</span>}
           <span className="agent-name">
             <i className="agent-badge" aria-hidden="true">
               <Sparkles size={22} fill="currentColor" strokeWidth={1.7} />
@@ -57,11 +64,15 @@ export function AgentHome() {
           </span>
         </h1>
 
-        {messages.length > 0 && (
-          <div className="agent-thread" aria-live="polite">
+        {hasMessages && (
+          <div
+            className="agent-thread"
+            aria-label="Conversation with trinetra-agent"
+            aria-live="polite"
+          >
             {messages.map((chatMessage) => (
               <article className={chatMessage.role} key={chatMessage.id}>
-                <span>{chatMessage.role}</span>
+                <span>{chatMessage.role === "user" ? "You" : "Trinetra"}</span>
                 {chatMessage.parts.map((part, index) => {
                   if (part.type === "text") {
                     return <p key={index}>{part.text}</p>;
@@ -88,16 +99,30 @@ export function AgentHome() {
                 })}
               </article>
             ))}
-            {isRunning && <div className="agent-thinking">Investigating…</div>}
+            {isRunning && (
+              <div className="agent-thinking" role="status">
+                <span aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                Trinetra is thinking
+              </div>
+            )}
             {error && (
-              <div className="agent-thinking" role="alert">
+              <div className="agent-error" role="alert">
                 The agent run failed: {error.message}
               </div>
             )}
+            <div ref={threadEndRef} />
           </div>
         )}
 
-        <form className="agent-composer" onSubmit={handleSubmit}>
+        <form
+          className="agent-composer"
+          aria-label="Message composer"
+          onSubmit={handleSubmit}
+        >
           <textarea
             autoFocus
             aria-label="Message to trinetra-agent"
@@ -108,8 +133,12 @@ export function AgentHome() {
           />
           <p>Press Enter to send, Shift+Enter for new line</p>
           <button type="submit" disabled={isRunning || !message.trim()}>
-            <Zap size={22} fill="currentColor" />
-            {isRunning ? "Running" : "Preload"}
+            {hasMessages ? (
+              <Send size={18} />
+            ) : (
+              <Zap size={22} fill="currentColor" />
+            )}
+            {isRunning ? "Thinking" : hasMessages ? "Send" : "Preload"}
           </button>
         </form>
       </section>

@@ -47,7 +47,9 @@ textarea {
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #151719;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(164, 60, 255, 0.045), transparent 34%),
+    #151719;
   color: #d7d7db;
 }
 
@@ -72,6 +74,12 @@ textarea {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.agent-menu:focus-visible,
+.agent-composer button:focus-visible {
+  outline: 2px solid #a43cff;
+  outline-offset: 3px;
+}
+
 .agent-start {
   width: min(81.5vw, 1304px);
   transform: translateY(-4.5vh);
@@ -92,65 +100,168 @@ textarea {
 
 .agent-start.has-thread {
   height: 100svh;
-  padding: 64px 0 42px;
+  width: min(920px, calc(100vw - 40px));
+  padding: 34px 0 24px;
   transform: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
 }
 
 .agent-start.has-thread h1 {
-  margin-bottom: 24px;
+  margin: 0;
+  padding: 0 4px;
+  justify-content: flex-start;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+
+.agent-start.has-thread .agent-name {
+  gap: 10px;
+}
+
+.agent-start.has-thread .agent-badge {
+  width: 29px;
+  height: 32px;
+  border-width: 3px;
+  border-radius: 9px;
+}
+
+.agent-start.has-thread .agent-badge svg {
+  width: 16px;
+  height: 16px;
 }
 
 .agent-thread {
-  width: min(900px, 100%);
-  max-height: min(36svh, 360px);
-  margin: 0 auto 22px;
-  padding: 2px 8px;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 20px 4px 10px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   scrollbar-width: thin;
   scrollbar-color: #4a4f59 transparent;
+  scroll-behavior: smooth;
 }
 
 .agent-thread article {
-  max-width: 82%;
-  padding: 13px 16px;
+  width: fit-content;
+  max-width: min(76%, 680px);
+  padding: 14px 17px;
   border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  background: #191b1f;
+  border-radius: 16px 16px 16px 5px;
+  background: #1a1c20;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.12);
 }
 
 .agent-thread article.user {
   align-self: flex-end;
+  border-radius: 16px 16px 5px 16px;
   border-color: rgba(164, 60, 255, 0.24);
-  background: rgba(164, 60, 255, 0.08);
+  background: rgba(164, 60, 255, 0.1);
 }
 
 .agent-thread article > span {
-  color: #777c88;
+  color: #858a96;
   font-size: 10px;
+  font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
 
 .agent-thread article > p {
-  margin: 7px 0 0;
-  color: #d7d7db;
-  font-size: 16px;
-  line-height: 1.55;
+  margin: 6px 0 0;
+  color: #e0e0e4;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .agent-thinking {
-  color: #9b90a7;
-  font-size: 13px;
+  width: fit-content;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px 14px 14px 5px;
+  background: #1a1c20;
+  color: #a3a4ad;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+
+.agent-thinking > span {
+  display: flex;
+  gap: 3px;
+}
+
+.agent-thinking i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #a43cff;
+  animation: agent-dot 1s ease-in-out infinite;
+}
+
+.agent-thinking i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.agent-thinking i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.agent-error {
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 101, 93, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 101, 93, 0.07);
+  color: #e6a29d;
+  font-size: 12px;
 }
 
 .agent-start.has-thread .agent-composer {
-  height: 210px;
+  height: 116px;
+  border-width: 1px;
+  border-radius: 20px;
+  background: #1a1c20;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.agent-start.has-thread .agent-composer textarea {
+  inset: 0 0 38px;
+  padding: 16px 18px 8px;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.agent-start.has-thread .agent-composer p {
+  left: 18px;
+  bottom: 15px;
+  font-size: 11px;
+}
+
+.agent-start.has-thread .agent-composer button {
+  right: 12px;
+  bottom: 10px;
+  height: 40px;
+  min-width: 98px;
+  padding: 0 16px;
+  gap: 8px;
+  border-radius: 10px;
+  background: #302936;
+  color: #e4d9eb;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.agent-start.has-thread .agent-composer button:not(:disabled):hover {
+  background: #3b2d44;
+}
+
+.agent-start.has-thread .agent-composer button:disabled {
+  opacity: 0.48;
 }
 
 .agent-name {
@@ -282,6 +393,88 @@ textarea {
     padding: 0 14px;
     gap: 7px;
     font-size: 16px;
+  }
+
+  .agent-start.has-thread {
+    width: calc(100vw - 20px);
+    height: 100svh;
+    padding: 18px 0 10px;
+    transform: none;
+    gap: 10px;
+  }
+
+  .agent-start.has-thread h1 {
+    margin: 0;
+    padding: 0 4px 4px;
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 18px;
+  }
+
+  .agent-thread {
+    padding: 10px 2px 6px;
+    gap: 12px;
+  }
+
+  .agent-thread article {
+    max-width: 90%;
+    padding: 12px 14px;
+  }
+
+  .agent-thread article > p {
+    font-size: 14px;
+  }
+
+  .agent-start.has-thread .agent-composer {
+    height: 106px;
+    border-radius: 17px;
+  }
+
+  .agent-start.has-thread .agent-composer textarea {
+    inset: 0 0 34px;
+    padding: 14px 15px 6px;
+    font-size: 15px;
+  }
+
+  .agent-start.has-thread .agent-composer p {
+    left: 15px;
+    right: 105px;
+    bottom: 13px;
+    font-size: 10px;
+  }
+
+  .agent-start.has-thread .agent-composer button {
+    right: 9px;
+    bottom: 8px;
+    min-width: 88px;
+    height: 38px;
+    padding: 0 13px;
+    font-size: 13px;
+  }
+}
+
+@keyframes agent-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-thread {
+    scroll-behavior: auto;
+  }
+
+  .agent-thinking i {
+    animation: none;
   }
 }
 
