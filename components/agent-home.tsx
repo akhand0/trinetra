@@ -1,24 +1,31 @@
 "use client";
 
+import { useChat } from "@ai-sdk/react";
+import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
 import { MoreVertical, Sparkles, Zap } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { TriggerLiveChat } from "@/components/trigger-live-chat";
-
-type ActivePrompt = {
-  prompt: string;
-  requestId: string;
-};
+import { mintChatAccessToken, startChatSession } from "@/app/actions";
+import { ChartSpecView } from "@/components/visualizations";
+import { safeParseChartSpec } from "@/lib/telemetry/chart-spec";
+import type { trinetraAgent } from "@/trigger/agent";
 
 export function AgentHome() {
   const [message, setMessage] = useState("");
-  const [activePrompt, setActivePrompt] = useState<ActivePrompt | null>(null);
+  const transport = useTriggerChatTransport<typeof trinetraAgent>({
+    task: "trinetra-agent",
+    accessToken: ({ chatId }) => mintChatAccessToken(chatId),
+    startSession: ({ chatId, clientData }) =>
+      startChatSession({ chatId, clientData }),
+  });
+  const { error, messages, sendMessage, status } = useChat({ transport });
+  const isRunning = status === "submitted" || status === "streaming";
 
   function startTesting() {
     const prompt = message.trim();
-    if (!prompt) return;
-    setActivePrompt({ prompt, requestId: crypto.randomUUID() });
+    if (!prompt || isRunning) return;
     setMessage("");
+    void sendMessage({ text: prompt });
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -33,23 +40,13 @@ export function AgentHome() {
     }
   }
 
-  if (activePrompt) {
-    return (
-      <TriggerLiveChat
-        initialPrompt={activePrompt.prompt}
-        requestId={activePrompt.requestId}
-        onBack={() => setActivePrompt(null)}
-      />
-    );
-  }
-
   return (
     <main className="agent-home">
       <button className="agent-menu" aria-label="Open menu">
         <MoreVertical size={24} strokeWidth={2.5} />
       </button>
 
-      <section className="agent-start">
+      <section className={`agent-start${messages.length ? " has-thread" : ""}`}>
         <h1>
           <span>Type a message to start testing</span>
           <span className="agent-name">
@@ -59,6 +56,46 @@ export function AgentHome() {
             trinetra-agent
           </span>
         </h1>
+
+        {messages.length > 0 && (
+          <div className="agent-thread" aria-live="polite">
+            {messages.map((chatMessage) => (
+              <article className={chatMessage.role} key={chatMessage.id}>
+                <span>{chatMessage.role}</span>
+                {chatMessage.parts.map((part, index) => {
+                  if (part.type === "text") {
+                    return <p key={index}>{part.text}</p>;
+                  }
+                  if (part.type === "data-panel") {
+                    const data = part.data as {
+                      title?: string;
+                      finding?: string;
+                      spec?: unknown;
+                    };
+                    const spec = safeParseChartSpec(data.spec);
+                    return (
+                      <div className="agent-data-part" key={index}>
+                        <small>
+                          {spec ? "AGENT-COMPOSED CHART" : "STREAMED PANEL"}
+                        </small>
+                        <b>{data.title ?? "Probe panel"}</b>
+                        {spec && <ChartSpecView spec={spec} compact />}
+                        <p>{data.finding}</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </article>
+            ))}
+            {isRunning && <div className="agent-thinking">Investigating…</div>}
+            {error && (
+              <div className="agent-thinking" role="alert">
+                The agent run failed: {error.message}
+              </div>
+            )}
+          </div>
+        )}
 
         <form className="agent-composer" onSubmit={handleSubmit}>
           <textarea
@@ -70,9 +107,9 @@ export function AgentHome() {
             onKeyDown={handleKeyDown}
           />
           <p>Press Enter to send, Shift+Enter for new line</p>
-          <button type="submit" disabled={!message.trim()}>
+          <button type="submit" disabled={isRunning || !message.trim()}>
             <Zap size={22} fill="currentColor" />
-            Preload
+            {isRunning ? "Running" : "Preload"}
           </button>
         </form>
       </section>

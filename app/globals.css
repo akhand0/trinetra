@@ -90,6 +90,69 @@ textarea {
   color: #888c97;
 }
 
+.agent-start.has-thread {
+  height: 100svh;
+  padding: 64px 0 42px;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.agent-start.has-thread h1 {
+  margin-bottom: 24px;
+}
+
+.agent-thread {
+  width: min(900px, 100%);
+  max-height: min(36svh, 360px);
+  margin: 0 auto 22px;
+  padding: 2px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4f59 transparent;
+}
+
+.agent-thread article {
+  max-width: 82%;
+  padding: 13px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: #191b1f;
+}
+
+.agent-thread article.user {
+  align-self: flex-end;
+  border-color: rgba(164, 60, 255, 0.24);
+  background: rgba(164, 60, 255, 0.08);
+}
+
+.agent-thread article > span {
+  color: #777c88;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.agent-thread article > p {
+  margin: 7px 0 0;
+  color: #d7d7db;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.agent-thinking {
+  color: #9b90a7;
+  font-size: 13px;
+}
+
+.agent-start.has-thread .agent-composer {
+  height: 210px;
+}
+
 .agent-name {
   display: inline-flex;
   align-items: center;
@@ -2253,112 +2316,7 @@ a {
   animation: toast-in 220ms ease both;
 }
 
-.live-page {
-  min-height: 100vh;
-  overflow-y: auto;
-  background:
-    radial-gradient(circle at 50% -20%, rgba(149, 136, 255, 0.11), transparent 38%),
-    var(--bg);
-  padding-bottom: 70px;
-}
-
-.live-page > header {
-  height: 56px;
-  padding: 0 22px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.live-page > header button,
-.live-page > header span {
-  color: #848b99;
-  text-decoration: none;
-  font-size: 9px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.live-page > header button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.live-page > header span {
-  color: #9990dc;
-  border: 1px solid rgba(149, 136, 255, 0.18);
-  background: rgba(149, 136, 255, 0.06);
-  border-radius: 12px;
-  padding: 4px 8px;
-}
-
-.live-page > section {
-  width: min(780px, calc(100% - 30px));
-  margin: 50px auto 0;
-}
-
-.live-intro {
-  text-align: center;
-  color: var(--violet);
-}
-
-.live-intro h1 {
-  color: var(--text);
-  margin: 10px 0 5px;
-  font-size: 24px;
-  font-weight: 570;
-  letter-spacing: -0.035em;
-}
-
-.live-intro p {
-  width: min(540px, 100%);
-  margin: 0 auto;
-  color: #6f7786;
-  font-size: 10px;
-  line-height: 1.55;
-}
-
-.live-messages {
-  min-height: 300px;
-  margin-top: 30px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.live-messages > article {
-  max-width: 86%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #11151b;
-  padding: 12px 14px;
-}
-
-.live-messages > article.user {
-  align-self: flex-end;
-  background: rgba(255, 129, 66, 0.07);
-  border-color: rgba(255, 129, 66, 0.18);
-}
-
-.live-messages > article > span {
-  color: #5b6371;
-  font-size: 7px;
-  text-transform: uppercase;
-  letter-spacing: 0.13em;
-}
-
-.live-messages article > p {
-  color: #aeb5c1;
-  margin: 7px 0 0;
-  font-size: 10px;
-  line-height: 1.55;
-}
-
-.live-data-part {
+.agent-data-part {
   margin-top: 9px;
   border: 1px solid rgba(149, 136, 255, 0.18);
   border-radius: 6px;
@@ -2368,70 +2326,21 @@ a {
   flex-direction: column;
 }
 
-.live-data-part small {
+.agent-data-part small {
   color: #746cb0;
   font-size: 7px;
   letter-spacing: 0.12em;
 }
 
-.live-data-part b {
+.agent-data-part b {
   margin-top: 3px;
   font-size: 11px;
 }
 
-.live-data-part p {
+.agent-data-part p {
   color: #7c8493;
   font-size: 9px;
   margin: 4px 0 0;
-}
-
-.live-thinking {
-  color: #777f8d;
-  font-size: 9px;
-  padding: 10px;
-}
-
-.live-composer {
-  position: sticky;
-  bottom: 18px;
-  height: 48px;
-  margin-top: 18px;
-  border: 1px solid #303744;
-  border-radius: 8px;
-  background: rgba(17, 21, 27, 0.94);
-  backdrop-filter: blur(14px);
-  padding: 5px;
-  display: flex;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
-}
-
-.live-composer input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  color: #d8dce4;
-  background: transparent;
-  padding: 0 10px;
-  font-size: 10px;
-}
-
-.live-composer button {
-  border: 0;
-  border-radius: 5px;
-  background: var(--orange);
-  color: #1a0d07;
-  padding: 0 13px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 9px;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.live-composer button:disabled {
-  opacity: 0.5;
 }
 
 @keyframes panel-in {

@@ -82,7 +82,7 @@ pnpm trigger:dev
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) for the direct `useChat` + `useTriggerChatTransport` surface. The agent conversation stays on the root URL, and the production canvas and live agent share the same typed `PanelData` contract.
+Open [http://localhost:3000](http://localhost:3000) for the single agent page. The real Trigger.dev conversation and its typed telemetry panels stay inside this page without navigating elsewhere.
 
 ### Live OpenTelemetry Demo telemetry
 
