@@ -1,21 +1,24 @@
 "use client";
 
 import { MoreVertical, Sparkles, Zap } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
+import { TriggerLiveChat } from "@/components/trigger-live-chat";
+
+type ActivePrompt = {
+  prompt: string;
+  requestId: string;
+};
 
 export function AgentHome() {
-  const router = useRouter();
   const [message, setMessage] = useState("");
+  const [activePrompt, setActivePrompt] = useState<ActivePrompt | null>(null);
 
   function startTesting() {
     const prompt = message.trim();
     if (!prompt) return;
-    const requestId = crypto.randomUUID();
-    router.push(
-      `/live?prompt=${encodeURIComponent(prompt)}&request=${encodeURIComponent(requestId)}`,
-    );
+    setActivePrompt({ prompt, requestId: crypto.randomUUID() });
+    setMessage("");
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -28,6 +31,16 @@ export function AgentHome() {
       event.preventDefault();
       startTesting();
     }
+  }
+
+  if (activePrompt) {
+    return (
+      <TriggerLiveChat
+        initialPrompt={activePrompt.prompt}
+        requestId={activePrompt.requestId}
+        onBack={() => setActivePrompt(null)}
+      />
+    );
   }
 
   return (

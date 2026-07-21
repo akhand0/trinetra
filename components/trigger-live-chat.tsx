@@ -3,7 +3,6 @@
 import { useChat } from "@ai-sdk/react";
 import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
 import { ArrowLeft, Send, Sparkles, Zap } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { mintChatAccessToken, startChatSession } from "@/app/actions";
 import { ChartSpecView } from "@/components/visualizations";
@@ -13,9 +12,11 @@ import type { trinetraAgent } from "@/trigger/agent";
 export function TriggerLiveChat({
   initialPrompt,
   requestId,
+  onBack,
 }: {
   initialPrompt?: string;
   requestId?: string;
+  onBack: () => void;
 }) {
   const initialPromptSent = useRef(false);
   const [input, setInput] = useState(
@@ -44,9 +45,9 @@ export function TriggerLiveChat({
   return (
     <main className="live-page">
       <header>
-        <Link href="/">
+        <button type="button" onClick={onBack}>
           <ArrowLeft size={14} /> Back
-        </Link>
+        </button>
         <span>
           <Zap size={13} /> Trigger.dev durable session
         </span>

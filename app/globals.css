@@ -2271,7 +2271,7 @@ a {
   justify-content: space-between;
 }
 
-.live-page > header a,
+.live-page > header button,
 .live-page > header span {
   color: #848b99;
   text-decoration: none;
@@ -2279,6 +2279,13 @@ a {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.live-page > header button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .live-page > header span {
