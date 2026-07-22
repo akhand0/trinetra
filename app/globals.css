@@ -702,6 +702,7 @@ textarea {
   color: #8c909a;
 }
 
+.agent-speak-findings,
 .visual-report-open,
 .visual-report-control button {
   min-height: 29px;
@@ -720,11 +721,24 @@ textarea {
   cursor: pointer;
 }
 
+.agent-speak-findings:hover:not(:disabled),
 .visual-report-open:hover,
 .visual-report-control button:hover:not(:disabled) {
   border-color: rgba(181, 106, 255, 0.42);
   color: #ecdef5;
   background: rgba(181, 106, 255, 0.13);
+}
+
+.agent-speak-findings.speaking {
+  border-color: rgba(203, 116, 255, 0.48);
+  color: #f2e4fb;
+  background: rgba(181, 106, 255, 0.18);
+  box-shadow: 0 0 0 3px rgba(181, 106, 255, 0.07);
+}
+
+.agent-speak-findings:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .visual-report-control {

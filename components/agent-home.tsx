@@ -3,7 +3,13 @@
 import { useChat } from "@ai-sdk/react";
 import { useTriggerChatTransport } from "@trigger.dev/sdk/chat/react";
 import { Mic, MoreVertical, Send, Sparkles, Square } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -13,12 +19,12 @@ import {
   VisualResponseGroup,
   type VisualPanelPayload,
 } from "@/components/visual-response";
-import { safeParseVisualResponse } from "@/lib/telemetry/visual-response";
 import {
   visibleSelectionActionText,
   type InvestigationAction,
   type InvestigationSelection,
 } from "@/lib/telemetry/investigation-selection";
+import { spokenFindingsFromParts } from "@/lib/telemetry/spoken-findings";
 import type { trinetraAgent } from "@/trigger/agent";
 
 function normalizeAgentMarkdown(text: string) {
@@ -67,6 +73,22 @@ function speechRecognitionConstructor() {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 }
 
+function subscribeToSpeechSupport() {
+  return () => undefined;
+}
+
+function browserSupportsSpeech() {
+  return (
+    typeof window !== "undefined" &&
+    Boolean(window.speechSynthesis) &&
+    typeof SpeechSynthesisUtterance !== "undefined"
+  );
+}
+
+function serverSupportsSpeech() {
+  return false;
+}
+
 function voiceErrorMessage(error: string) {
   if (error === "not-allowed" || error === "service-not-allowed") {
     return "Microphone access is blocked. Allow it in your browser and try again.";
@@ -80,39 +102,23 @@ function voiceErrorMessage(error: string) {
   return "Voice input stopped. Please try again.";
 }
 
-function assistantSpeech(parts: readonly unknown[]) {
-  const fragments: string[] = [];
-  for (const rawPart of parts) {
-    const part = rawPart as { type?: string; text?: string; data?: unknown };
-    if (part.type === "text" && part.text?.trim()) {
-      fragments.push(part.text.trim());
-      continue;
-    }
-    if (part.type === "data-visual-response") {
-      const response = safeParseVisualResponse(part.data);
-      if (response?.verdict) fragments.push(response.verdict);
-      continue;
-    }
-    if (part.type === "data-panel") {
-      const panel = part.data as VisualPanelPayload | undefined;
-      if (panel?.finding) fragments.push(panel.finding);
-    }
-  }
-  return [...new Set(fragments)].join(" ").replace(/\s+/g, " ").slice(0, 700);
-}
-
 export function AgentHome() {
   const [message, setMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(
+    null,
+  );
   const threadEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const voiceBaseRef = useRef("");
   const voiceFinalRef = useRef("");
   const voiceLatestRef = useRef("");
   const voiceHeardRef = useRef(false);
   const voiceCanceledRef = useRef(false);
   const awaitingVoiceReplyRef = useRef(false);
+  const voiceReplyAfterIdRef = useRef<string | null>(null);
   const spokenMessageIdRef = useRef<string | null>(null);
   const selectionSubmissionRef = useRef(false);
   const transport = useTriggerChatTransport<typeof trinetraAgent>({
@@ -124,6 +130,57 @@ export function AgentHome() {
   const { error, messages, sendMessage, status } = useChat({ transport });
   const isRunning = status === "submitted" || status === "streaming";
   const hasMessages = messages.length > 0;
+  const speechSupported = useSyncExternalStore(
+    subscribeToSpeechSupport,
+    browserSupportsSpeech,
+    serverSupportsSpeech,
+  );
+
+  const stopSpeaking = useCallback(() => {
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setSpeakingMessageId(null);
+  }, []);
+
+  const speakFindings = useCallback((messageId: string, text: string) => {
+    const spokenText = text.trim();
+    if (
+      !spokenText ||
+      typeof window === "undefined" ||
+      !window.speechSynthesis ||
+      typeof SpeechSynthesisUtterance === "undefined"
+    ) {
+      return false;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(spokenText);
+    utterance.lang = navigator.language || "en-GB";
+    utterance.rate = 1.02;
+    utterance.onstart = () => {
+      if (utteranceRef.current === utterance) {
+        setSpeakingMessageId(messageId);
+      }
+    };
+    const finish = () => {
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setSpeakingMessageId(null);
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    return true;
+  }, []);
+
+  function toggleSpokenFindings(messageId: string, text: string) {
+    if (speakingMessageId === messageId) {
+      stopSpeaking();
+      return;
+    }
+    speakFindings(messageId, text);
+  }
 
   useEffect(() => {
     if (!isRunning) selectionSubmissionRef.current = false;
@@ -137,37 +194,59 @@ export function AgentHome() {
   useEffect(() => {
     if (error) {
       awaitingVoiceReplyRef.current = false;
+      voiceReplyAfterIdRef.current = null;
       return;
     }
     if (!awaitingVoiceReplyRef.current || isRunning) return;
     const latestAssistant = messages
       .toReversed()
       .find((candidate) => candidate.role === "assistant");
-    if (!latestAssistant || spokenMessageIdRef.current === latestAssistant.id) {
+    if (
+      !latestAssistant ||
+      latestAssistant.id === voiceReplyAfterIdRef.current ||
+      spokenMessageIdRef.current === latestAssistant.id
+    ) {
       return;
     }
-    const spokenText = assistantSpeech(latestAssistant.parts);
-    if (!spokenText || typeof window === "undefined" || !window.speechSynthesis) {
+    const spokenText = spokenFindingsFromParts(latestAssistant.parts);
+    if (!spokenText) {
       awaitingVoiceReplyRef.current = false;
+      voiceReplyAfterIdRef.current = null;
+      return;
+    }
+    if (!speechSupported) {
+      awaitingVoiceReplyRef.current = false;
+      voiceReplyAfterIdRef.current = null;
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(spokenText);
-    utterance.lang = navigator.language || "en-GB";
-    utterance.rate = 1.02;
-    window.speechSynthesis.speak(utterance);
+    speakFindings(latestAssistant.id, spokenText);
     spokenMessageIdRef.current = latestAssistant.id;
     awaitingVoiceReplyRef.current = false;
-  }, [error, isRunning, messages]);
+    voiceReplyAfterIdRef.current = null;
+  }, [error, isRunning, messages, speakFindings, speechSupported]);
 
   useEffect(
     () => () => {
       recognitionRef.current?.abort();
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+      utteranceRef.current = null;
     },
     [],
   );
+
+  useEffect(() => {
+    const stopOnVisibilityChange = () => {
+      if (document.hidden) stopSpeaking();
+    };
+    const stopOnPageHide = () => stopSpeaking();
+    document.addEventListener("visibilitychange", stopOnVisibilityChange);
+    window.addEventListener("pagehide", stopOnPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", stopOnVisibilityChange);
+      window.removeEventListener("pagehide", stopOnPageHide);
+    };
+  }, [stopSpeaking]);
 
   function startTesting() {
     const prompt = message.trim();
@@ -179,7 +258,8 @@ export function AgentHome() {
       setIsListening(false);
     }
     awaitingVoiceReplyRef.current = false;
-    window.speechSynthesis?.cancel();
+    voiceReplyAfterIdRef.current = null;
+    stopSpeaking();
     setMessage("");
     void sendMessage({ text: prompt });
   }
@@ -192,7 +272,8 @@ export function AgentHome() {
     if (isRunning || selectionSubmissionRef.current) return;
     selectionSubmissionRef.current = true;
     awaitingVoiceReplyRef.current = false;
-    window.speechSynthesis?.cancel();
+    voiceReplyAfterIdRef.current = null;
+    stopSpeaking();
     const text = visibleSelectionActionText(action, selection);
     void sendMessage({
       text,
@@ -221,7 +302,7 @@ export function AgentHome() {
       return;
     }
 
-    window.speechSynthesis?.cancel();
+    stopSpeaking();
     const recognition = new Recognition();
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -275,7 +356,15 @@ export function AgentHome() {
 
       setVoiceNotice("Voice message sent");
       setMessage("");
-      awaitingVoiceReplyRef.current = true;
+      voiceReplyAfterIdRef.current =
+        messages.toReversed().find((candidate) => candidate.role === "assistant")
+          ?.id ?? null;
+      awaitingVoiceReplyRef.current = speechSupported;
+      if (!speechSupported) {
+        setVoiceNotice(
+          "Voice message sent. Spoken replies aren't supported in this browser.",
+        );
+      }
       void sendMessage({ text: prompt });
     };
 
@@ -365,6 +454,9 @@ export function AgentHome() {
                     );
                   }
                   if (part.type === "data-visual-response") {
+                    const spokenText = spokenFindingsFromParts(
+                      chatMessage.parts,
+                    );
                     const previousUserPrompt = messages
                       .slice(0, messageIndex)
                       .toReversed()
@@ -376,6 +468,17 @@ export function AgentHome() {
                         query={previousUserPrompt?.text}
                         onInvestigate={investigateSelection}
                         disabled={isRunning}
+                        speaking={speakingMessageId === chatMessage.id}
+                        speechSupported={speechSupported}
+                        onToggleSpeech={
+                          spokenText
+                            ? () =>
+                                toggleSpokenFindings(
+                                  chatMessage.id,
+                                  spokenText,
+                                )
+                            : undefined
+                        }
                         key={partKey}
                       />
                     );
@@ -421,6 +524,7 @@ export function AgentHome() {
                 setIsListening(false);
                 setVoiceNotice("");
               }
+              if (speakingMessageId) stopSpeaking();
               setMessage(event.target.value);
             }}
             onKeyDown={handleKeyDown}
@@ -435,7 +539,11 @@ export function AgentHome() {
             <button
               type="button"
               className={`agent-voice${isListening ? " listening" : ""}`}
-              aria-label={isListening ? "Stop listening and send" : "Start voice mode"}
+              aria-label={
+                isListening
+                  ? "Stop listening and send"
+                  : "Start voice conversation; replies will be spoken"
+              }
               aria-pressed={isListening}
               disabled={isRunning}
               onClick={toggleVoiceInput}

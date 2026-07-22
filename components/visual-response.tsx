@@ -9,6 +9,8 @@ import {
   Minimize2,
   ScanSearch,
   Sparkles,
+  Square,
+  Volume2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -189,6 +191,9 @@ export function VisualResponseGroup({
   query,
   onInvestigate,
   disabled = false,
+  speaking = false,
+  speechSupported = false,
+  onToggleSpeech,
 }: {
   data: unknown;
   query?: string;
@@ -198,6 +203,9 @@ export function VisualResponseGroup({
     originalQuery: string,
   ) => void;
   disabled?: boolean;
+  speaking?: boolean;
+  speechSupported?: boolean;
+  onToggleSpeech?: () => void;
 }) {
   const [selection, setSelection] = useState<InvestigationSelection | null>(
     null,
@@ -253,6 +261,40 @@ export function VisualResponseGroup({
               <span key={specialist}>{specialist}</span>
             ))}
           </div>
+          {response.status === "complete" && onToggleSpeech && (
+            <button
+              type="button"
+              className={`agent-speak-findings${speaking ? " speaking" : ""}`}
+              aria-label={
+                speaking ? "Stop speaking findings" : "Speak findings aloud"
+              }
+              aria-pressed={speaking}
+              disabled={!speechSupported}
+              title={
+                speechSupported
+                  ? undefined
+                  : "Spoken findings are unavailable in this browser"
+              }
+              onClick={onToggleSpeech}
+            >
+              {speaking ? (
+                <Square size={13} fill="currentColor" />
+              ) : (
+                <Volume2 size={14} />
+              )}
+              <span>{speaking ? "Stop speaking" : "Speak findings"}</span>
+            </button>
+          )}
+          {onToggleSpeech && (
+            <span
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {speaking ? "Reading investigation findings aloud." : ""}
+            </span>
+          )}
           {response.status === "complete" && reportQuery && (
             <VisualReportControl query={reportQuery} />
           )}
