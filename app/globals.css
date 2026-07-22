@@ -998,21 +998,27 @@ textarea {
 
 .visual-metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: stretch;
   gap: 10px;
 }
 
-.visual-metric-grid article {
+.agent-thread .visual-metric-grid article {
+  container-type: inline-size;
+  width: 100%;
+  max-width: none;
   min-width: 0;
   min-height: 126px;
   padding: 15px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  display: grid;
+  grid-template-rows: auto minmax(42px, 1fr) auto;
+  align-items: start;
+  justify-self: stretch;
   gap: 8px;
   border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 14px;
   background: rgba(8, 10, 14, 0.32);
+  box-shadow: none;
 }
 
 .visual-metric-grid article > span {
@@ -1024,19 +1030,54 @@ textarea {
 }
 
 .visual-metric-grid article strong {
-  overflow: hidden;
+  min-width: 0;
+  align-self: center;
   color: #f0edf3;
-  font-size: clamp(22px, 4vw, 34px);
+  font-size: 18px;
   font-weight: 620;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: normal;
+}
+
+.visual-metric-grid article strong.value-kpi {
+  font-size: clamp(25px, 16cqi, 38px);
+  letter-spacing: -0.05em;
+}
+
+.visual-metric-grid article strong.value-token {
+  font-size: clamp(16px, 11cqi, 26px);
+  line-height: 1.14;
+}
+
+.visual-metric-grid article strong.value-text {
+  font-size: clamp(15px, 9cqi, 21px);
+  line-height: 1.16;
+}
+
+.visual-metric-grid article strong.value-timestamp,
+.visual-metric-grid article strong.value-id {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.045em;
-  line-height: 1;
-  text-overflow: ellipsis;
+  line-height: 1.22;
+}
+
+.visual-metric-grid article strong.value-timestamp {
+  font-size: clamp(14px, 8.5cqi, 19px);
+}
+
+.visual-metric-grid article strong.value-id {
+  font-size: clamp(12px, 7cqi, 16px);
 }
 
 .visual-metric-grid article small {
   min-height: 17px;
-  color: #7e828e;
-  font-size: 10px;
+  align-self: end;
+  color: #989ca7;
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -1708,6 +1749,18 @@ textarea {
     width: 38px;
     min-width: 38px;
   }
+}
+
+@media (max-width: 420px) {
+  .visual-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.agent-visual-card.expanded > header h2 {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 @keyframes agent-dot {

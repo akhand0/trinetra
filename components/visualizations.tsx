@@ -414,21 +414,60 @@ export function TableExplorer({ spec }: { spec: TableSpec }) {
   );
 }
 
+function metricValueKind(label: string, value: string) {
+  const normalizedLabel = label.toLowerCase();
+  if (
+    /^\d{4}-\d{2}-\d{2}/.test(value) ||
+    /\b(time|timestamp|start|end|window)\b/.test(normalizedLabel)
+  ) {
+    return "timestamp";
+  }
+  if (
+    /^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(value) ||
+    /\b(id|trace id|span id)\b/.test(normalizedLabel)
+  ) {
+    return "id";
+  }
+  if (
+    /^[+-]?[\d,.]+(?:\s?(?:%|ms|s|m|h|x|kb|mb|gb|tb|req\/s))?$/i.test(
+      value,
+    )
+  ) {
+    return "kpi";
+  }
+  if (
+    /\b(service|bucket|kind|arm|signal|cause|status|region|environment)\b/.test(
+      normalizedLabel,
+    ) ||
+    /^\S+$/.test(value)
+  ) {
+    return "token";
+  }
+  return "text";
+}
+
 export function MetricGrid({ spec }: { spec: MetricSpec }) {
   return (
     <div className="visual-metric-grid">
-      {spec.items.map((item) => (
-        <article className={`tone-${item.tone}`} key={item.label}>
-          <span>{item.label}</span>
-          <strong>{item.value}</strong>
-          {(item.trend || item.detail) && (
-            <small>
-              {item.trend && <b>{item.trend}</b>}
-              {item.detail}
-            </small>
-          )}
-        </article>
-      ))}
+      {spec.items.map((item) => {
+        const value = item.value.trim();
+        const kind = metricValueKind(item.label, value);
+
+        return (
+          <article className={`tone-${item.tone}`} key={item.label}>
+            <span>{item.label}</span>
+            <strong className={`value-${kind}`} title={item.value}>
+              {item.value}
+            </strong>
+            {(item.trend || item.detail) && (
+              <small>
+                {item.trend && <b>{item.trend}</b>}
+                {item.detail}
+              </small>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }
