@@ -1,5 +1,11 @@
 import { ai, chat } from "@trigger.dev/sdk/ai";
-import { type ModelMessage, stepCountIs, streamText, tool } from "ai";
+import {
+  hasToolCall,
+  type ModelMessage,
+  stepCountIs,
+  streamText,
+  tool,
+} from "ai";
 import { z } from "zod";
 import {
   createClickHouseMcpClient,
@@ -25,7 +31,7 @@ import {
   investigateWithTeam,
   runInvestigationTeam,
 } from "./investigation-team";
-import { trinetraModel } from "./model";
+import { forcedToolProviderOptions, trinetraModel } from "./model";
 import { cardinalityScanProbe } from "./probes/cardinality-scan";
 import { deployCorrelationProbe } from "./probes/deploy-correlation";
 import { errorClusterProbe } from "./probes/error-cluster";
@@ -383,6 +389,7 @@ unable to send email. Do not investigate data or call any other tool.`,
           toolNamesFromSteps(steps).has("sendEmailReport")
             ? {}
             : {
+                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: "sendEmailReport" as const,
@@ -483,14 +490,18 @@ Choose the response depth from the prompt:
    render one searchable table. This is intentionally a single-view answer.
 2. For incident detail, diagnosis, comparison, or "why" questions, call
    investigateWithTeam exactly once. It runs verdict, trend, and evidence
-   specialists in parallel and composes every supported result into one ordered
-   multi-level canvas. Do not duplicate its panels with direct render calls.
+   specialists in parallel. Each specialist chooses metrics, chart, or table
+   from the actual ClickHouse result shape, then every supported result is
+   composed into one ordered multi-level canvas. Do not prescribe a fixed
+   format or duplicate its panels with direct render calls.
 3. If a team specialist reports unavailable evidence, preserve the partial
    answer. Never invent a missing trend or metric just to fill a slot.
-4. For direct single-view questions, choose the renderer from actual tool data:
+4. For direct single-view questions, choose the renderer only after inspecting
+   the actual tool data:
    - inventories, schemas, logs, traces, or raw rows -> renderTable
    - trends, distributions, or comparisons -> renderChart
    - KPIs, verdicts, deltas, or status summaries -> renderMetrics
+   Optimize for interaction and insight, not consistency with earlier answers.
 5. Never use a markdown table, numbered data dump, or prose list in place of a
    visual. If the user asks to list tables, call list_tables then renderTable.
 6. Be honest about exploratory misses. Never claim fine-tuning or RLHF.
@@ -502,7 +513,7 @@ Panels stream directly from tools.`,
         messages,
         tools: agentTools,
         abortSignal: signal,
-        stopWhen: stepCountIs(12),
+        stopWhen: [stepCountIs(12), hasToolCall("investigateWithTeam")],
         prepareStep: async ({ steps }) => {
           try {
             const calledTools = toolNamesFromSteps(steps);
@@ -511,6 +522,7 @@ Panels stream directly from tools.`,
               !calledTools.has("investigateWithTeam")
             ) {
               return {
+                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: "investigateWithTeam" as const,
@@ -527,6 +539,7 @@ Panels stream directly from tools.`,
               !calledTools.has("renderTable")
             ) {
               return {
+                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: "renderTable" as const,
@@ -562,6 +575,7 @@ Panels stream directly from tools.`,
             ) {
               promotedArms.add(promoted);
               return {
+                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: ARM_TOOL_NAME[promoted],

@@ -15,7 +15,7 @@ import { trinetraModel } from "./model";
 const submissionTools = {
   submitMetrics: tool({
     description:
-      "Submit the overview verdict as 3-6 high-signal KPI or status cards. " +
+      "Submit 2-8 high-signal KPI, status, comparison, or verdict cards. " +
       "Every value must come from ClickHouse evidence gathered this turn.",
     inputSchema: metricSubmissionSchema,
     execute: async (input) => ({ kind: "metrics" as const, ...input }),
@@ -84,16 +84,6 @@ export const trinetraSpecialistAgent = chat.agent({
         ...clickStackTools,
         ...clickHouseTools,
       };
-      const assignment = messages
-        .filter((message) => message.role === "user")
-        .at(-1);
-      const assignmentText =
-        typeof assignment?.content === "string" ? assignment.content : "";
-      const requiredSubmissionTool = assignmentText.includes("LENS: overview")
-        ? "submitMetrics"
-        : assignmentText.includes("LENS: trend")
-          ? "submitChart"
-          : "submitTable";
 
       return streamText({
         ...chat.toStreamTextOptions({ tools: specialistTools }),
@@ -105,11 +95,16 @@ Work independently and only from data that is actually available:
 1. Discover relevant tables and schemas before querying.
 2. Run read-only SELECT queries that directly answer the user's prompt.
 3. Cross-reference the requested entity, ID, service, and time window when present.
-4. Submit exactly one typed result for your assigned lens:
-   - overview -> submitMetrics with 3-6 decisive values/statuses
-   - trend -> submitChart only when at least two comparable buckets/rows exist
-   - evidence -> submitTable with the strongest row-level proof
-5. If the data cannot support your lens, call reportUnavailable. Never invent a
+4. After inspecting the actual rows, choose exactly one visual form with the
+   highest insight-to-space ratio for this prompt. The lens controls analytical
+   depth, not visual type; every lens may choose any renderer:
+   - submitMetrics for a small set of decisive values, deltas, or statuses
+   - submitChart for ordered time buckets, distributions, or comparisons
+   - submitTable for logs, traces, events, or evidence that benefits from
+     searching, sorting, and row-level exploration
+   Prefer the form that exposes the finding most clearly and interactively.
+   Do not choose a renderer before seeing the ClickHouse result shape.
+5. If the data cannot support an honest visual, call reportUnavailable. Never invent a
    chart series, KPI, timestamp, service, or causal claim.
 6. "Unavailable", "missing data", and similar placeholders are not metrics or
    evidence rows. Report them with reportUnavailable instead of visualizing them.
@@ -128,12 +123,7 @@ Do not write a prose answer. Never issue writes, DDL, or destructive SQL.`,
             "reportUnavailable",
           ].some((name) => called.has(name));
           if (!submitted && called.has("run_query")) {
-            return {
-              toolChoice: {
-                type: "tool" as const,
-                toolName: requiredSubmissionTool,
-              },
-            };
+            return { toolChoice: "required" as const };
           }
           return {};
         },

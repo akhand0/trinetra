@@ -13,5 +13,17 @@ export const openrouter = createOpenAI({
 });
 
 export function trinetraModel() {
-  return openrouter.chat(process.env.TRINETRA_MODEL ?? "openai/gpt-4o");
+  return openrouter.chat(process.env.TRINETRA_MODEL ?? "moonshotai/kimi-k3");
+}
+
+/**
+ * Moonshot's thinking mode rejects an explicitly named tool choice. Disable
+ * thinking only for the deterministic routing steps that name a tool; Kimi's
+ * data analysis and visual selection steps continue to use thinking mode.
+ */
+export function forcedToolProviderOptions() {
+  const model = process.env.TRINETRA_MODEL ?? "moonshotai/kimi-k3";
+  return model.startsWith("moonshotai/kimi-")
+    ? { openai: { reasoningEffort: "none" as const } }
+    : undefined;
 }

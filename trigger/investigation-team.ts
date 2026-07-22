@@ -315,10 +315,10 @@ Investigate this lens independently. The priority signals are hints, not facts.
 The verified incident row is the best matching recent ClickHouse incident and
 may be used directly. Cross-reference other telemetry when the lens requires it. ${
       specialist.lens === "overview"
-        ? "Express the highest-signal verdict as compact KPI/status cards."
+        ? "Expose the highest-signal verdict in the most immediately understandable visual form."
         : specialist.lens === "trend"
-          ? "Find a meaningful time, distribution, or ranked comparison; skip if only one row exists."
-          : "Return the strongest raw or row-level evidence with only decision-useful columns."
+          ? "Find the strongest relationship, change, distribution, or comparison and choose the visual that reveals it best."
+          : "Make the strongest supporting evidence explorable with only decision-useful data."
     }
 Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
 
@@ -393,7 +393,8 @@ Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
 export const investigateWithTeam = tool({
   description:
     "Fan out a substantive ClickHouse investigation to three parallel durable " +
-    "specialists (verdict, trend, and row evidence), then compose every " +
+    "specialists (verdict, analysis, and evidence). Each specialist selects " +
+    "its own best interactive visual after querying the data, then compose every " +
     "supported result into one ordered multi-level visual answer. Use this for " +
     "incident details, diagnosis, comparisons, and 'why' questions. Do not use " +
     "it for a simple table/schema inventory.",
