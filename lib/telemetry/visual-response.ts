@@ -9,6 +9,7 @@ import {
 
 export const VISUAL_LEVELS = ["overview", "analysis", "evidence"] as const;
 export const VISUAL_SPANS = ["full", "half"] as const;
+export const MAX_INVESTIGATION_VISUALS = 8;
 
 const panelBaseSchema = z.object({
   id: z.string().min(1).max(100),
@@ -37,8 +38,11 @@ export const visualResponseSchema = z.object({
   title: z.string().min(1).max(140),
   verdict: z.string().min(1).max(360),
   status: z.enum(["running", "complete"]),
-  specialists: z.array(z.string().min(1).max(64)).max(5).default([]),
-  panels: z.array(visualPanelSchema).max(6),
+  specialists: z
+    .array(z.string().min(1).max(64))
+    .max(MAX_INVESTIGATION_VISUALS)
+    .default([]),
+  panels: z.array(visualPanelSchema).max(MAX_INVESTIGATION_VISUALS),
 });
 
 export const chartSubmissionSchema = z.object({

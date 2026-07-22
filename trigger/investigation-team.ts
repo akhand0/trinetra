@@ -7,6 +7,7 @@ import {
   visualKindSupportsDeliverable,
 } from "@/lib/telemetry/visual-deliverables";
 import {
+  MAX_INVESTIGATION_VISUALS,
   visualSubmissionSchema,
   type VisualPanel,
   type VisualResponseData,
@@ -37,7 +38,10 @@ const visualAssignmentSchema = z.object({
 });
 
 export const investigationPlanSchema = z.object({
-  specialists: z.array(visualAssignmentSchema).min(1).max(4),
+  specialists: z
+    .array(visualAssignmentSchema)
+    .min(1)
+    .max(MAX_INVESTIGATION_VISUALS),
 });
 
 type VisualAssignment = z.infer<typeof visualAssignmentSchema>;
@@ -109,24 +113,6 @@ function fallbackAssignments(query: string): VisualAssignment[] {
       level: "overview",
       span: "full",
       deliverable: "verdict",
-    },
-    {
-      id: "counterfactual",
-      label: "Counterfactual analyst",
-      objective:
-        "Test the leading explanation against the strongest alternative explanation in the data.",
-      level: "analysis",
-      span: "half",
-      deliverable: "series",
-    },
-    {
-      id: "evidence",
-      label: "Evidence investigator",
-      objective:
-        "Expose the smallest set of inspectable rows that proves or disproves the leading explanation.",
-      level: "evidence",
-      span: "half",
-      deliverable: "rows",
     },
   ];
 }
@@ -438,7 +424,9 @@ Specialist position: ${index + 1} of ${specialists.length}.`);
 export const investigateWithTeam = tool({
   description:
     "Fan out a substantive ClickHouse investigation to a prompt-specific team " +
-    "of one to four durable specialists chosen by the orchestrator. Give each specialist a " +
+    `of one to ${MAX_INVESTIGATION_VISUALS} durable specialists chosen by the orchestrator. ` +
+    "The orchestrator decides the count from the independent questions in the prompt; " +
+    "never target a fixed panel count or add duplicate filler. Give each specialist a " +
     "verdict, series, or rows deliverable; it selects the best compatible interactive visual " +
     "after querying the data, then compose every " +
     "supported result into one ordered multi-level visual answer. Use this for " +

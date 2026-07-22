@@ -22,6 +22,7 @@ import {
   tableSpecSchema,
 } from "@/lib/telemetry/chart-spec";
 import {
+  MAX_INVESTIGATION_VISUALS,
   visualResponseSchema,
   type VisualResponseData,
 } from "@/lib/telemetry/visual-response";
@@ -492,20 +493,24 @@ Choose the response depth from the prompt:
 1. For a simple inventory or schema question, inspect ClickHouse directly and
    render one searchable table. This is intentionally a single-view answer.
 2. For incident detail, diagnosis, comparison, or "why" questions, call
-   investigateWithTeam exactly once. Design a fresh team of 1-4 specialists
-   for this prompt. Give each a distinct, concrete objective; choose its depth
-   (overview/analysis/evidence) and layout span (full/half). Use one specialist
-   when one visual can answer decisively, two complementary specialists for a
-   focused diagnosis, and three or four only when the question genuinely needs
-   multiple independent views. Assign each specialist one deliverable that
+   investigateWithTeam exactly once. Decompose this prompt into independent
+   questions that could each produce a decision-useful visual, then design a
+   fresh team of 1-${MAX_INVESTIGATION_VISUALS} specialists. The decomposition—not
+   a preferred panel count—decides the candidate team size. Each specialist must
+   validate its lens against ClickHouse; unsupported lenses disappear from the
+   final response. Stop adding specialists when the next view would repeat an
+   objective, evidence source, or likely insight. Give each specialist a
+   distinct, concrete objective; choose its depth
+   (overview/analysis/evidence), layout span (full/half), and one deliverable that
    describes the evidence shape it must seek:
    - verdict: a compact answer or decision from decisive aggregates
    - series: ordered time buckets, categorical comparisons, or a dense matrix
    - rows: inspectable logs, events, trace spans, or other row-level proof
-   In a multi-specialist plan, use different deliverables and never assign more
-   than one verdict. A broad incident diagnosis should normally include both a
-   series and rows deliverable so the answer contains an explorable chart or
-   heatmap plus inspectable table or trace evidence. The specialist chooses the
+   Never assign more than one verdict. Series and rows deliverables may repeat
+   when they answer genuinely different questions—for example separate traffic,
+   latency, error, service, and deployment series, or separate log and trace
+   evidence. Do not create a specialist merely to cover every deliverable type.
+   The specialist chooses the
    exact compatible renderer from its actual ClickHouse result shape: temporal
    series become line/area charts, categorical comparisons become bar/scatter
    charts, dense matrices become heatmaps, ordinary rows become tables, and a

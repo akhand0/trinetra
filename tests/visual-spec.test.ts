@@ -8,6 +8,7 @@ import {
   safeParseTraceSpec,
 } from "@/lib/telemetry/chart-spec";
 import {
+  MAX_INVESTIGATION_VISUALS,
   safeParseVisualResponse,
   tableSubmissionSchema,
 } from "@/lib/telemetry/visual-response";
@@ -172,6 +173,54 @@ describe("visual response contracts", () => {
     });
 
     expect(result.success && result.data.specialists).toHaveLength(2);
+  });
+
+  it("lets the planner choose more than three independent visuals", () => {
+    const specialists = Array.from({ length: 6 }, (_, index) => ({
+      id: `lens-${index}`,
+      label: `Investigator ${index + 1}`,
+      objective: `Investigate independent telemetry question ${index + 1} with data-backed evidence.`,
+      level: index === 0 ? ("overview" as const) : ("analysis" as const),
+      span: index === 0 ? ("full" as const) : ("half" as const),
+      deliverable: index % 2 === 0 ? ("series" as const) : ("rows" as const),
+    }));
+
+    const result = investigationPlanSchema.safeParse({ specialists });
+
+    expect(result.success && result.data.specialists).toHaveLength(6);
+    expect(MAX_INVESTIGATION_VISUALS).toBeGreaterThan(3);
+  });
+
+  it("preserves every useful panel selected by a larger agent team", () => {
+    const panels = Array.from({ length: 7 }, (_, index) => ({
+      id: `panel-${index}`,
+      kind: "chart" as const,
+      level: index === 0 ? ("overview" as const) : ("analysis" as const),
+      span: index === 0 ? ("full" as const) : ("half" as const),
+      title: `Independent finding ${index + 1}`,
+      eyebrow: `Analysis · Lens ${index + 1}`,
+      finding: `Finding ${index + 1} is backed by a distinct ClickHouse query.`,
+      spec: {
+        mark: "line" as const,
+        x: { field: "bucket" },
+        y: { field: "value" },
+        data: [
+          { bucket: "10:00", value: index + 1 },
+          { bucket: "11:00", value: index + 2 },
+        ],
+      },
+    }));
+
+    const response = safeParseVisualResponse({
+      id: "investigation-expanded-team",
+      title: "Expanded investigation",
+      verdict: "Seven independent views were supported by the data.",
+      status: "complete",
+      specialists: panels.map((_, index) => `Investigator ${index + 1}`),
+      panels,
+    });
+
+    expect(response?.panels).toHaveLength(7);
   });
 
   it("accepts an empty running multi-agent response", () => {

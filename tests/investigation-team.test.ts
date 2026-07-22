@@ -170,4 +170,88 @@ describe("investigation team composition", () => {
       "Timeline investigator returned no visual",
     );
   });
+
+  it("composes more than three non-overlapping specialist visuals", async () => {
+    agentMocks.submissions = [metrics, line, line, table, table];
+
+    const result = await runInvestigationTeam(
+      {
+        query: "Investigate traffic, latency, errors, logs, and traces",
+        episodeId: "episode-expanded-team",
+        plan: {
+          specialists: [
+            {
+              id: "verdict",
+              label: "Lead investigator",
+              objective: "Determine the strongest concise incident verdict.",
+              level: "overview",
+              span: "full",
+              deliverable: "verdict",
+            },
+            {
+              id: "traffic",
+              label: "Traffic investigator",
+              objective: "Measure request volume across the available time range.",
+              level: "analysis",
+              span: "half",
+              deliverable: "series",
+            },
+            {
+              id: "latency",
+              label: "Latency investigator",
+              objective: "Measure latency independently across the available range.",
+              level: "analysis",
+              span: "half",
+              deliverable: "series",
+            },
+            {
+              id: "logs",
+              label: "Log evidence investigator",
+              objective: "Find the strongest row-level log evidence for the incident.",
+              level: "evidence",
+              span: "half",
+              deliverable: "rows",
+            },
+            {
+              id: "traces",
+              label: "Trace evidence investigator",
+              objective: "Find distinct row-level trace evidence for the incident.",
+              level: "evidence",
+              span: "half",
+              deliverable: "rows",
+            },
+          ],
+        },
+      },
+      undefined,
+      { publish: async () => {} },
+    );
+
+    expect(result.panelCount).toBe(5);
+    expect(result.report.panels.map((panel) => panel.kind)).toEqual([
+      "metrics",
+      "chart",
+      "chart",
+      "table",
+      "table",
+    ]);
+    expect(agentMocks.close).toHaveBeenCalledTimes(5);
+  });
+
+  it("uses one minimal investigator when a generated plan is unavailable", async () => {
+    agentMocks.submissions = [metrics];
+
+    const result = await runInvestigationTeam(
+      {
+        query: "Investigate an unfamiliar telemetry question",
+        episodeId: "episode-minimal-fallback",
+      },
+      undefined,
+      { publish: async () => {} },
+    );
+
+    expect(result.panelCount).toBe(1);
+    expect(result.report.specialists).toEqual(["Lead investigator"]);
+    expect(agentMocks.close).toHaveBeenCalledTimes(1);
+  });
 });
