@@ -72,14 +72,14 @@ export function AgentHome() {
             <i className="agent-badge" aria-hidden="true">
               <Sparkles size={22} fill="currentColor" strokeWidth={1.7} />
             </i>
-            trinetra-agent
+            trinetra
           </span>
         </h1>
 
         {hasMessages && (
           <div
             className="agent-thread"
-            aria-label="Conversation with trinetra-agent"
+            aria-label="Conversation with trinetra"
             aria-live="polite"
           >
             {messages.map((chatMessage, messageIndex) => (
@@ -168,7 +168,7 @@ export function AgentHome() {
         >
           <textarea
             autoFocus
-            aria-label="Message to trinetra-agent"
+            aria-label="Message to trinetra"
             placeholder="Type a message..."
             value={message}
             onChange={(event) => setMessage(event.target.value)}
