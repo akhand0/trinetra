@@ -1313,13 +1313,18 @@ textarea {
 
 .agent-start.has-thread .agent-composer p {
   left: 18px;
+  right: 172px;
   bottom: 15px;
   font-size: 11px;
 }
 
-.agent-start.has-thread .agent-composer button {
+.agent-start.has-thread .agent-composer-actions {
   right: 12px;
   bottom: 10px;
+  gap: 8px;
+}
+
+.agent-start.has-thread .agent-composer button {
   height: 40px;
   min-width: 98px;
   padding: 0 16px;
@@ -1329,6 +1334,12 @@ textarea {
   color: #e4d9eb;
   font-size: 14px;
   font-weight: 620;
+}
+
+.agent-start.has-thread .agent-composer .agent-voice {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
 }
 
 .agent-start.has-thread .agent-composer button:not(:disabled):hover {
@@ -1400,6 +1411,7 @@ textarea {
 .agent-composer p {
   position: absolute;
   left: 32px;
+  right: 255px;
   bottom: 33px;
   margin: 0;
   color: #858995;
@@ -1407,10 +1419,21 @@ textarea {
   letter-spacing: -0.015em;
 }
 
-.agent-composer button {
+.agent-composer p.voice-listening {
+  color: #bd78ff;
+}
+
+.agent-composer-actions {
   position: absolute;
   right: 30px;
   bottom: 23px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-composer button {
+  position: static;
   height: 50px;
   min-width: 153px;
   padding: 0 20px;
@@ -1424,6 +1447,29 @@ textarea {
   background: #292c31;
   font-size: 22px;
   cursor: pointer;
+}
+
+.agent-composer .agent-voice {
+  width: 50px;
+  min-width: 50px;
+  padding: 0;
+  border: 1px solid rgba(164, 60, 255, 0.22);
+  border-radius: 50%;
+  color: #bd78ff;
+  background: rgba(164, 60, 255, 0.08);
+}
+
+.agent-composer .agent-voice:hover:not(:disabled) {
+  border-color: rgba(189, 120, 255, 0.55);
+  background: rgba(164, 60, 255, 0.16);
+}
+
+.agent-composer .agent-voice.listening {
+  border-color: #bd78ff;
+  color: #f0ddff;
+  background: rgba(164, 60, 255, 0.3);
+  box-shadow: 0 0 0 7px rgba(164, 60, 255, 0.1);
+  animation: agent-voice-pulse 1.4s ease-in-out infinite;
 }
 
 .agent-composer button:disabled {
@@ -1455,19 +1501,28 @@ textarea {
 
   .agent-composer p {
     left: 23px;
-    right: 130px;
+    right: 178px;
     bottom: 23px;
     font-size: 12px;
   }
 
-  .agent-composer button {
+  .agent-composer-actions {
     right: 18px;
     bottom: 17px;
+    gap: 7px;
+  }
+
+  .agent-composer button {
     min-width: 104px;
     height: 44px;
     padding: 0 14px;
     gap: 7px;
     font-size: 16px;
+  }
+
+  .agent-composer .agent-voice {
+    width: 44px;
+    min-width: 44px;
   }
 
   .agent-start.has-thread {
@@ -1631,18 +1686,27 @@ textarea {
 
   .agent-start.has-thread .agent-composer p {
     left: 15px;
-    right: 105px;
+    right: 142px;
     bottom: 13px;
     font-size: 10px;
   }
 
-  .agent-start.has-thread .agent-composer button {
+  .agent-start.has-thread .agent-composer-actions {
     right: 9px;
     bottom: 8px;
+    gap: 6px;
+  }
+
+  .agent-start.has-thread .agent-composer button {
     min-width: 88px;
     height: 38px;
     padding: 0 13px;
     font-size: 13px;
+  }
+
+  .agent-start.has-thread .agent-composer .agent-voice {
+    width: 38px;
+    min-width: 38px;
   }
 }
 
@@ -1660,12 +1724,24 @@ textarea {
   }
 }
 
+@keyframes agent-voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 5px rgba(164, 60, 255, 0.08);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(164, 60, 255, 0.15);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-thread {
     scroll-behavior: auto;
   }
 
-  .agent-thinking i {
+  .agent-thinking i,
+  .agent-voice.listening {
     animation: none;
   }
 }
