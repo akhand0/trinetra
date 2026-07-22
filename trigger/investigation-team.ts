@@ -77,7 +77,7 @@ async function loadIncidentSeed(query: string): Promise<IncidentSeed | null> {
   const incidentId = query.match(
     /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i,
   )?.[0];
-  if (!incidentId || !hasClickHouseConfig()) return null;
+  if (!hasClickHouseConfig()) return null;
 
   try {
     const result = await clickhouse().query({
@@ -92,15 +92,33 @@ async function loadIncidentSeed(query: string): Promise<IncidentSeed | null> {
           best_arm,
           notes
         FROM incident_labels
-        WHERE incident_id = {incidentId:UUID}
-        LIMIT 1
+        ${incidentId ? "WHERE incident_id = {incidentId:UUID}" : ""}
+        ORDER BY window_start DESC
+        LIMIT ${incidentId ? 1 : 20}
       `,
-      query_params: { incidentId },
+      query_params: incidentId ? { incidentId } : undefined,
       format: "JSONEachRow",
     });
     const rows = await result.json<Record<string, unknown>>();
-    const parsed = incidentSeedSchema.safeParse(rows[0]);
-    return parsed.success ? parsed.data : null;
+    const seeds = rows.flatMap((row) => {
+      const parsed = incidentSeedSchema.safeParse(row);
+      return parsed.success ? [parsed.data] : [];
+    });
+    if (incidentId || seeds.length < 2) return seeds[0] ?? null;
+
+    const normalizedQuery = query.toLowerCase().replaceAll(/[_-]+/g, " ");
+    return (
+      seeds.find((seed) =>
+        [
+          seed.culprit_service,
+          seed.culprit_kind,
+          seed.context_bucket,
+          seed.best_arm,
+        ].some((value) =>
+          normalizedQuery.includes(value.toLowerCase().replaceAll(/[_-]+/g, " ")),
+        ),
+      ) ?? seeds[0]
+    );
   } catch {
     return null;
   }
@@ -294,8 +312,8 @@ EPISODE: ${episodeId}
 VERIFIED INCIDENT ROW: ${incidentSeed ? JSON.stringify(incidentSeed) : "none found"}
 
 Investigate this lens independently. The priority signals are hints, not facts.
-The verified incident row is a ClickHouse query result and may be used directly,
-but cross-reference other telemetry when the lens requires it. ${
+The verified incident row is the best matching recent ClickHouse incident and
+may be used directly. Cross-reference other telemetry when the lens requires it. ${
       specialist.lens === "overview"
         ? "Express the highest-signal verdict as compact KPI/status cards."
         : specialist.lens === "trend"

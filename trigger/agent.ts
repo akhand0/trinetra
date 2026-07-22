@@ -210,7 +210,7 @@ function shouldUseInvestigationTeam(query: string) {
   const simpleInventory =
     /\b(list|show|what|which)\b[\s\S]{0,40}\b(tables?|schema)\b/i.test(query);
   if (simpleInventory) return false;
-  return /\b(incident|details?|why|root\s*cause|slow|latency|error|trace|logs?|metrics?|compare|analysis|analy[sz]e|service|deploy|spike|regression|outage|culprit)\b/i.test(
+  return /\b(incident|details?|why|root\s*cause|slow|latency|error|trace|logs?|metrics?|compare|analysis|analy[sz]e|service|deploy|spike|regression|outage|culprit|visuals?|visuali[sz](?:e|ation)|charts?|graphs?|plots?|dashboards?)\b/i.test(
     query,
   );
 }

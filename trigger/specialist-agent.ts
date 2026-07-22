@@ -84,6 +84,16 @@ export const trinetraSpecialistAgent = chat.agent({
         ...clickStackTools,
         ...clickHouseTools,
       };
+      const assignment = messages
+        .filter((message) => message.role === "user")
+        .at(-1);
+      const assignmentText =
+        typeof assignment?.content === "string" ? assignment.content : "";
+      const requiredSubmissionTool = assignmentText.includes("LENS: overview")
+        ? "submitMetrics"
+        : assignmentText.includes("LENS: trend")
+          ? "submitChart"
+          : "submitTable";
 
       return streamText({
         ...chat.toStreamTextOptions({ tools: specialistTools }),
@@ -118,7 +128,12 @@ Do not write a prose answer. Never issue writes, DDL, or destructive SQL.`,
             "reportUnavailable",
           ].some((name) => called.has(name));
           if (!submitted && called.has("run_query")) {
-            return { toolChoice: "required" as const };
+            return {
+              toolChoice: {
+                type: "tool" as const,
+                toolName: requiredSubmissionTool,
+              },
+            };
           }
           return {};
         },
