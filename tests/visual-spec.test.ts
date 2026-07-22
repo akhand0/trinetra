@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  effectiveChartSeriesField,
+  safeParseChartSpec,
   safeParseHeatmapSpec,
   safeParseMetricSpec,
   safeParseTableSpec,
@@ -9,6 +11,11 @@ import {
   safeParseVisualResponse,
   tableSubmissionSchema,
 } from "@/lib/telemetry/visual-response";
+import {
+  submissionToolsForDeliverable,
+  visualDeliverableFromAssignment,
+  visualKindSupportsDeliverable,
+} from "@/lib/telemetry/visual-deliverables";
 import { investigationPlanSchema } from "@/trigger/investigation-team";
 
 describe("visual response contracts", () => {
@@ -39,6 +46,57 @@ describe("visual response contracts", () => {
     });
 
     expect(spec?.items[0].tone).toBe("neutral");
+  });
+
+  it.each(["line", "area", "bar", "scatter"] as const)(
+    "accepts an agent-composed %s chart",
+    (mark) => {
+      const spec = safeParseChartSpec({
+        mark,
+        title: "Latency by minute",
+        x: { field: "minute", label: "Minute" },
+        y: { field: "p99_ms", label: "p99 (ms)" },
+        data: [
+          { minute: "10:01", p99_ms: 180 },
+          { minute: "10:02", p99_ms: 420 },
+        ],
+      });
+
+      expect(spec?.mark).toBe(mark);
+      expect(spec?.data).toHaveLength(2);
+    },
+  );
+
+  it("drops a numeric measure mistakenly used as a chart series", () => {
+    const spec = safeParseChartSpec({
+      mark: "area",
+      x: { field: "bucket" },
+      y: { field: "spans" },
+      series: { field: "spans" },
+      data: [
+        { bucket: "10:00", spans: 12 },
+        { bucket: "11:00", spans: 20 },
+      ],
+    });
+
+    expect(spec?.series).toBeUndefined();
+  });
+
+  it("keeps a categorical series repeated across x values", () => {
+    const spec = safeParseChartSpec({
+      mark: "line",
+      x: { field: "bucket" },
+      y: { field: "spans" },
+      series: { field: "service" },
+      data: [
+        { bucket: "10:00", service: "checkout", spans: 12 },
+        { bucket: "11:00", service: "checkout", spans: 20 },
+        { bucket: "10:00", service: "payment", spans: 8 },
+        { bucket: "11:00", service: "payment", spans: 11 },
+      ],
+    });
+
+    expect(effectiveChartSeriesField(spec!)).toBe("service");
   });
 
   it("accepts an agent-composed heatmap", () => {
@@ -99,6 +157,7 @@ describe("visual response contracts", () => {
             "Locate the strongest service-by-time concentration around the regression.",
           level: "overview",
           span: "full",
+          deliverable: "series",
         },
         {
           id: "verification",
@@ -107,6 +166,7 @@ describe("visual response contracts", () => {
             "Check whether the dominant concentration survives comparison with adjacent telemetry.",
           level: "evidence",
           span: "half",
+          deliverable: "rows",
         },
       ],
     });
@@ -169,5 +229,104 @@ describe("visual response contracts", () => {
       "overview",
       "evidence",
     ]);
+  });
+
+  it("preserves line, bar, and table panels in one investigation", () => {
+    const response = safeParseVisualResponse({
+      id: "investigation-mixed",
+      title: "Payments incident",
+      verdict: "Latency rose after the deployment.",
+      status: "complete",
+      specialists: ["Timeline", "Comparison", "Evidence"],
+      panels: [
+        {
+          id: "timeline",
+          kind: "chart",
+          level: "overview",
+          span: "full",
+          title: "p99 over time",
+          eyebrow: "Overview · Timeline",
+          finding: "p99 rose after 10:02.",
+          spec: {
+            mark: "line",
+            x: { field: "minute" },
+            y: { field: "p99_ms" },
+            data: [
+              { minute: "10:01", p99_ms: 180 },
+              { minute: "10:02", p99_ms: 420 },
+            ],
+          },
+        },
+        {
+          id: "comparison",
+          kind: "chart",
+          level: "analysis",
+          span: "half",
+          title: "Errors by service",
+          eyebrow: "Analysis · Comparison",
+          finding: "payments-api has the most errors.",
+          spec: {
+            mark: "bar",
+            x: { field: "service" },
+            y: { field: "errors" },
+            data: [
+              { service: "payments-api", errors: 42 },
+              { service: "checkout", errors: 7 },
+            ],
+          },
+        },
+        {
+          id: "evidence",
+          kind: "table",
+          level: "evidence",
+          span: "half",
+          title: "Slow requests",
+          eyebrow: "Evidence · Requests",
+          finding: "The slowest rows share the same service.",
+          table: {
+            title: "Slow requests",
+            columns: [
+              { key: "service", label: "Service" },
+              { key: "duration_ms", label: "Duration (ms)" },
+            ],
+            rows: [
+              { service: "payments-api", duration_ms: 910 },
+              { service: "payments-api", duration_ms: 840 },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(response?.panels.map((panel) => panel.kind)).toEqual([
+      "chart",
+      "chart",
+      "table",
+    ]);
+    expect(
+      response?.panels
+        .filter((panel) => panel.kind === "chart")
+        .map((panel) => panel.spec.mark),
+    ).toEqual(["line", "bar"]);
+  });
+
+  it("keeps specialist renderers inside their assigned data shape", () => {
+    expect(submissionToolsForDeliverable("verdict")).toEqual([
+      "submitMetrics",
+      "submitChart",
+    ]);
+    expect(submissionToolsForDeliverable("series")).toEqual([
+      "submitChart",
+      "submitHeatmap",
+    ]);
+    expect(submissionToolsForDeliverable("rows")).toEqual([
+      "submitTable",
+      "submitTrace",
+    ]);
+    expect(visualKindSupportsDeliverable("series", "metrics")).toBe(false);
+    expect(visualKindSupportsDeliverable("rows", "table")).toBe(true);
+    expect(
+      visualDeliverableFromAssignment("DELIVERABLE: series\nUSER PROMPT: why slow?"),
+    ).toBe("series");
   });
 });

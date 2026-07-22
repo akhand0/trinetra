@@ -497,11 +497,21 @@ Choose the response depth from the prompt:
    (overview/analysis/evidence) and layout span (full/half). Use one specialist
    when one visual can answer decisively, two complementary specialists for a
    focused diagnosis, and three or four only when the question genuinely needs
-   multiple independent views. Never reuse a fixed verdict/trend/evidence trio.
-   Each specialist independently chooses metrics, chart, table, heatmap, or a
-   trace waterfall from its actual ClickHouse result shape. Do not prescribe
-   renderer types in objectives and do not duplicate its visuals with direct
-   render calls.
+   multiple independent views. Assign each specialist one deliverable that
+   describes the evidence shape it must seek:
+   - verdict: a compact answer or decision from decisive aggregates
+   - series: ordered time buckets, categorical comparisons, or a dense matrix
+   - rows: inspectable logs, events, trace spans, or other row-level proof
+   In a multi-specialist plan, use different deliverables and never assign more
+   than one verdict. A broad incident diagnosis should normally include both a
+   series and rows deliverable so the answer contains an explorable chart or
+   heatmap plus inspectable table or trace evidence. The specialist chooses the
+   exact compatible renderer from its actual ClickHouse result shape: temporal
+   series become line/area charts, categorical comparisons become bar/scatter
+   charts, dense matrices become heatmaps, ordinary rows become tables, and a
+   coherent distributed trace becomes a waterfall. This is a data-shape
+   contract, not a fixed dashboard trio. Do not name renderer tools inside the
+   objective and do not duplicate team visuals with direct render calls.
 3. If a team specialist reports unavailable evidence, preserve the partial
    answer. Never invent a missing trend or metric just to fill a slot.
 4. For direct single-view questions, choose the renderer only after inspecting

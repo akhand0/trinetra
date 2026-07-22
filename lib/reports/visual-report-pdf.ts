@@ -6,6 +6,7 @@ import type {
   TableSpec,
   TraceSpec,
 } from "@/lib/telemetry/chart-spec";
+import { effectiveChartSeriesField } from "@/lib/telemetry/chart-spec";
 import type {
   VisualPanel,
   VisualResponseData,
@@ -204,7 +205,7 @@ function drawChart(doc: PDFKit.PDFDocument, spec: ChartSpec) {
   const min = Math.min(0, ...values);
   const max = Math.max(1, ...values);
   const range = max - min || 1;
-  const seriesField = spec.series?.field;
+  const seriesField = effectiveChartSeriesField(spec);
   const seriesNames = Array.from(
     new Set(spec.data.map((row) => text(seriesField ? row[seriesField] : "Value"))),
   );

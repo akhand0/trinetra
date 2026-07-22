@@ -8,6 +8,7 @@ import type {
   TableSpec,
   TraceSpec,
 } from "@/lib/telemetry/chart-spec";
+import { effectiveChartSeriesField } from "@/lib/telemetry/chart-spec";
 import type {
   HeatCell,
   Posterior,
@@ -44,7 +45,7 @@ export function ChartSpecView({
 
   const xField = spec.x.field;
   const yField = spec.y.field;
-  const seriesField = spec.series?.field;
+  const seriesField = effectiveChartSeriesField(spec);
 
   const categories = Array.from(
     new Set(spec.data.map((row) => String(row[xField] ?? ""))),
@@ -82,6 +83,10 @@ export function ChartSpecView({
 
   const xOf = (category: string) => {
     const index = categories.indexOf(category);
+    if (spec.mark === "bar") {
+      const slot = plotW / Math.max(categories.length, 1);
+      return pad.left + (index + 0.5) * slot;
+    }
     const step = plotW / Math.max(categories.length - 1, 1);
     return pad.left + index * step;
   };

@@ -29,6 +29,47 @@ export const chartSpecSchema = z.object({
 
 export type ChartSpec = z.infer<typeof chartSpecSchema>;
 
+/**
+ * Returns a grouping field only when it represents genuine repeated series.
+ * Models occasionally put the numeric y measure in `series`, which would turn
+ * every point into its own color and collapse line/area paths to single dots.
+ */
+export function effectiveChartSeriesField(spec: ChartSpec) {
+  const field = spec.series?.field;
+  if (!field || field === spec.x.field || field === spec.y.field) {
+    return undefined;
+  }
+
+  const xValuesBySeries = new Map<string, Set<string>>();
+  for (const row of spec.data) {
+    const rawSeries = row[field];
+    if (rawSeries === undefined || String(rawSeries).trim().length === 0) {
+      return undefined;
+    }
+    const key = String(rawSeries);
+    const xValues = xValuesBySeries.get(key) ?? new Set<string>();
+    xValues.add(String(row[spec.x.field] ?? ""));
+    xValuesBySeries.set(key, xValues);
+  }
+
+  if (xValuesBySeries.size < 2 || xValuesBySeries.size > 8) {
+    return undefined;
+  }
+
+  return Array.from(xValuesBySeries.values()).every(
+    (xValues) => xValues.size >= 2,
+  )
+    ? field
+    : undefined;
+}
+
+export function normalizeChartSpec(spec: ChartSpec): ChartSpec {
+  if (!spec.series || effectiveChartSeriesField(spec)) return spec;
+  const normalized = { ...spec };
+  delete normalized.series;
+  return normalized;
+}
+
 export const visualCellSchema = z.union([
   z.string(),
   z.number(),
@@ -125,7 +166,7 @@ export type TraceSpec = z.infer<typeof traceSpecSchema>;
  * degrades to an empty state rather than crashing the turn. */
 export function safeParseChartSpec(input: unknown): ChartSpec | null {
   const result = chartSpecSchema.safeParse(input);
-  return result.success ? result.data : null;
+  return result.success ? normalizeChartSpec(result.data) : null;
 }
 
 export function safeParseTableSpec(input: unknown): TableSpec | null {

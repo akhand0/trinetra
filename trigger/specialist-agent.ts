@@ -12,10 +12,15 @@ import {
   traceSubmissionSchema,
   unavailableSubmissionSchema,
 } from "@/lib/telemetry/visual-response";
+import { normalizeChartSpec } from "@/lib/telemetry/chart-spec";
+import {
+  submissionToolsForDeliverable,
+  visualDeliverableFromAssignment,
+} from "@/lib/telemetry/visual-deliverables";
 import { trinetraModel } from "./model";
 
 const PLACEHOLDER_PATTERN =
-  /\b(placeholder|dummy|fake data|sample data|example data|todo)\b/i;
+  /\b(placeholder|dummy|fake data|sample data|example data|todo|pending query|schema status values)\b/i;
 
 function assertGenuineVisual(input: unknown) {
   const serialized = JSON.stringify(input);
@@ -23,6 +28,35 @@ function assertGenuineVisual(input: unknown) {
     throw new Error(
       "Rejected placeholder visual. Submit only values copied from ClickHouse results.",
     );
+  }
+
+  const chart = (
+    input as
+      | {
+          spec?: {
+            x?: { field?: string };
+            y?: { field?: string };
+            data?: Array<Record<string, unknown>>;
+          };
+        }
+      | undefined
+  )?.spec;
+  if (chart?.data) {
+    const xField = chart.x?.field ?? "";
+    const yField = chart.y?.field ?? "";
+    const usableRows = chart.data.filter((row) => {
+      const x = row[xField];
+      const y = Number(row[yField]);
+      return x !== undefined && String(x).length > 0 && Number.isFinite(y);
+    });
+    const xBuckets = new Set(
+      usableRows.map((row) => String(row[xField] ?? "")),
+    );
+    if (usableRows.length < 2 || xBuckets.size < 2) {
+      throw new Error(
+        "Rejected non-visual chart. Use at least two real rows with distinct x values and finite y values.",
+      );
+    }
   }
 
   const heatmap = (input as { heatmap?: { cells?: unknown[] } } | undefined)
@@ -69,7 +103,11 @@ const submissionTools = {
     inputSchema: chartSubmissionSchema,
     execute: async (input) => {
       assertGenuineVisual(input);
-      return { kind: "chart" as const, ...input };
+      return {
+        kind: "chart" as const,
+        ...input,
+        spec: normalizeChartSpec(input.spec),
+      };
     },
   }),
   submitTable: tool({
@@ -108,7 +146,14 @@ const submissionTools = {
       "Use only when the available ClickHouse schema or rows cannot honestly " +
       "support the assigned visual lens.",
     inputSchema: unavailableSubmissionSchema,
-    execute: async (input) => ({ kind: "unavailable" as const, ...input }),
+    execute: async (input) => {
+      if (PLACEHOLDER_PATTERN.test(input.reason)) {
+        throw new Error(
+          "Rejected placeholder unavailability. State the exact missing table, range, or evidence discovered.",
+        );
+      }
+      return { kind: "unavailable" as const, ...input };
+    },
   }),
 };
 
@@ -131,9 +176,10 @@ function hasAcceptedSubmission(steps: unknown) {
         if (
           output &&
           typeof output.kind === "string" &&
-          renderToolNames.includes(
-            `submit${output.kind[0].toUpperCase()}${output.kind.slice(1)}` as (typeof renderToolNames)[number],
-          )
+          (output.kind === "unavailable" ||
+            renderToolNames.includes(
+              `submit${output.kind[0].toUpperCase()}${output.kind.slice(1)}` as (typeof renderToolNames)[number],
+            ))
         ) {
           return true;
         }
@@ -270,32 +316,50 @@ export const trinetraSpecialistAgent = chat.agent({
         ...clickStackTools,
         ...clickHouseTools,
       };
+      const deliverable = visualDeliverableFromAssignment(messages);
+      const compatibleRenderTools = submissionToolsForDeliverable(deliverable);
+      const dataToolNames = Object.keys(specialistTools).filter(
+        (name) =>
+          !submissionToolNames.includes(
+            name as (typeof submissionToolNames)[number],
+          ),
+      );
+      const activeInvestigationTools = [
+        ...dataToolNames,
+        ...compatibleRenderTools,
+        "reportUnavailable",
+      ] as Array<keyof typeof specialistTools>;
+      const terminalTools = [
+        ...compatibleRenderTools,
+        "reportUnavailable",
+      ] as Array<keyof typeof specialistTools>;
 
       return streamText({
         ...chat.toStreamTextOptions({ tools: specialistTools }),
         model: trinetraModel(),
         system: `You are one specialist in a parallel ClickHouse investigation.
-Your assignment contains one explicit objective, depth, and layout slot.
+Your assignment contains one explicit objective, depth, layout slot, and
+deliverable. Your assigned deliverable is ${deliverable}.
 
 Work independently and only from data that is actually available:
 1. Discover relevant tables and schemas before querying.
 2. Run read-only SELECT queries that directly answer the user's prompt.
 3. Cross-reference the requested entity, ID, service, and time window when present.
-4. After inspecting the actual rows, choose exactly one visual form with the
-   highest insight-to-space ratio for this prompt. The lens controls analytical
-   depth, not visual type; every lens may choose any renderer:
-   - submitMetrics for a small set of decisive values, deltas, or statuses
-   - submitChart for ordered time buckets, distributions, or comparisons
-   - submitTable for logs, traces, events, or evidence that benefits from
-     searching, sorting, and row-level exploration
-   - submitHeatmap for dense two-dimensional intensity or frequency patterns
-   - submitTrace for a single distributed trace whose timing exposes the culprit
-   Prefer the form that exposes the finding most clearly and interactively.
-   Do not default to metric cards or tables merely because they are familiar.
-   A trace question should usually become a trace waterfall; a dense service x
-   time pattern should usually become a heatmap; temporal change should usually
-   become a chart. Use metrics or tables only when those forms are genuinely best.
-   Do not choose a renderer before seeing the ClickHouse result shape.
+4. Query data with the assigned deliverable's shape, then choose exactly one
+   compatible renderer with the highest insight-to-space ratio:
+   - verdict: submitMetrics for decisive values/statuses, or submitChart when a
+     compact comparison communicates the decision better
+   - series: submitChart for ordered time buckets, distributions, or comparisons;
+     submitHeatmap for a genuinely dense two-dimensional pattern
+   - rows: submitTable for searchable row evidence; submitTrace only when the
+     returned spans form one coherent distributed trace
+   For a series, use line/area for temporal progression and bar/scatter for
+   categorical comparison or distribution. Omit the optional series field for a
+   single measure. Use it only for a categorical grouping field repeated across
+   multiple x values; never set series to the x or y field. For rows, select
+   scalar columns that make the evidence inspectable. Never submit metric cards
+   for a series or rows deliverable. Do not choose a renderer before seeing the
+   ClickHouse result.
    Put the display title inside metrics/spec/table/heatmap/trace as required by
    that visual object. Do not add a separate top-level title.
 5. If the data cannot support an honest visual after exhausting relevant tables
@@ -306,10 +370,17 @@ Work independently and only from data that is actually available:
    evidence rows. Report them with reportUnavailable instead of visualizing them.
 7. Never visualize query progress, a planned next step, a data-availability check,
    or a zero-row result. If an initial window is empty, inspect the available time
-   range and continue the investigation before selecting a renderer.
+   range and continue the investigation before selecting a renderer. An adjacent
+   real range may be visualized only when it directly explains the coverage gap
+   and the title/finding clearly distinguish it from the requested window.
 8. Placeholder, sample, example, or invented renderer values are rejected by the
    tool. If a renderer rejects the payload, correct it using the exact rows already
-   returned by ClickHouse or choose a different honest renderer.
+   returned by ClickHouse or choose a different honest renderer. Never make a
+   probe renderer call to test a schema and never submit "pending" evidence.
+9. A verified incident seed is context, not a substitute for supporting telemetry.
+   A series or rows deliverable must use at least one additional query result. A
+   rows deliverable may combine the verified incident row with real coverage or
+   corroboration rows when that contrast is itself the strongest evidence.
 
 Do not write a prose answer. Never issue writes, DDL, or destructive SQL.`,
         messages,
@@ -318,13 +389,17 @@ Do not write a prose answer. Never issue writes, DDL, or destructive SQL.`,
         stopWhen: [stepCountIs(14), ({ steps }) => hasAcceptedSubmission(steps)],
         prepareStep: async ({ steps }) => {
           const submitted = hasAcceptedSubmission(steps);
-          if (!submitted && countRenderableEvidence(steps) >= 3) {
+          if (
+            !submitted &&
+            steps.length >= 10 &&
+            countRenderableEvidence(steps) >= 1
+          ) {
             return {
-              activeTools: [...renderToolNames],
+              activeTools: terminalTools,
               toolChoice: "required" as const,
             };
           }
-          return {};
+          return submitted ? {} : { activeTools: activeInvestigationTools };
         },
         onFinish: closeMcp,
         onError: closeMcp,

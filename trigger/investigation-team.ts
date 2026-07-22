@@ -3,6 +3,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import { clickhouse, hasClickHouseConfig } from "@/lib/clickhouse/client";
 import {
+  VISUAL_DELIVERABLES,
+  visualKindSupportsDeliverable,
+} from "@/lib/telemetry/visual-deliverables";
+import {
   visualSubmissionSchema,
   type VisualPanel,
   type VisualResponseData,
@@ -25,6 +29,11 @@ const visualAssignmentSchema = z.object({
   objective: z.string().min(12).max(420),
   level: z.enum(["overview", "analysis", "evidence"]),
   span: z.enum(["full", "half"]),
+  deliverable: z
+    .enum(VISUAL_DELIVERABLES)
+    .describe(
+      "The data shape this specialist must investigate: verdict for a concise decision, series for ordered/comparative data, or rows for inspectable evidence.",
+    ),
 });
 
 export const investigationPlanSchema = z.object({
@@ -56,6 +65,7 @@ function fallbackAssignments(query: string): VisualAssignment[] {
           "Find the single trace and span sequence that most directly answers the prompt.",
         level: "overview",
         span: "full",
+        deliverable: "rows",
       },
       {
         id: "trace-context",
@@ -64,6 +74,7 @@ function fallbackAssignments(query: string): VisualAssignment[] {
           "Compare the selected trace with nearby telemetry only when it adds decision-useful context.",
         level: "analysis",
         span: "half",
+        deliverable: "series",
       },
     ];
   }
@@ -76,6 +87,7 @@ function fallbackAssignments(query: string): VisualAssignment[] {
           "Locate the strongest two-dimensional concentration in the requested services and time window.",
         level: "overview",
         span: "full",
+        deliverable: "series",
       },
       {
         id: "outlier",
@@ -84,6 +96,7 @@ function fallbackAssignments(query: string): VisualAssignment[] {
           "Verify the dominant cluster and expose the smallest useful set of supporting evidence.",
         level: "evidence",
         span: "half",
+        deliverable: "rows",
       },
     ];
   }
@@ -95,6 +108,7 @@ function fallbackAssignments(query: string): VisualAssignment[] {
         "Find the highest-signal data-backed answer and choose the visual that communicates it best.",
       level: "overview",
       span: "full",
+      deliverable: "verdict",
     },
     {
       id: "counterfactual",
@@ -103,6 +117,16 @@ function fallbackAssignments(query: string): VisualAssignment[] {
         "Test the leading explanation against the strongest alternative explanation in the data.",
       level: "analysis",
       span: "half",
+      deliverable: "series",
+    },
+    {
+      id: "evidence",
+      label: "Evidence investigator",
+      objective:
+        "Expose the smallest set of inspectable rows that proves or disproves the leading explanation.",
+      level: "evidence",
+      span: "half",
+      deliverable: "rows",
     },
   ];
 }
@@ -184,10 +208,16 @@ function isUsefulSubmission(submission: VisualSubmission) {
   }
   if (submission.kind === "chart") {
     const xField = submission.spec.x.field;
+    const yField = submission.spec.y.field;
+    const usableRows = submission.spec.data.filter((row) => {
+      const x = row[xField];
+      const y = Number(row[yField]);
+      return x !== undefined && String(x).length > 0 && Number.isFinite(y);
+    });
     const buckets = new Set(
-      submission.spec.data.map((row) => String(row[xField] ?? "")),
+      usableRows.map((row) => String(row[xField])),
     );
-    return submission.spec.data.length >= 2 && buckets.size >= 2;
+    return usableRows.length >= 2 && buckets.size >= 2;
   }
   if (submission.kind === "metrics") {
     return submission.metrics.items.some(
@@ -209,7 +239,10 @@ function isUsefulSubmission(submission: VisualSubmission) {
     return submission.trace.spans.some((span) => span.durationMs > 0);
   }
   return submission.table.rows.some((row) =>
-    Object.values(row).some((value) => !looksUnavailable(value)),
+    submission.table.columns.some((column) => {
+      const value = row[column.key];
+      return value !== undefined && !looksUnavailable(value);
+    }),
   );
 }
 
@@ -320,6 +353,7 @@ export async function runInvestigationTeam(
 OBJECTIVE: ${specialist.objective}
 DEPTH: ${specialist.level}
 LAYOUT: ${specialist.span}
+DELIVERABLE: ${specialist.deliverable}
 USER PROMPT: ${query}
 PRIORITY SIGNALS: ${priorityArms.join(", ")}
 EPISODE: ${episodeId}
@@ -327,8 +361,9 @@ VERIFIED INCIDENT ROW: ${incidentSeed ? JSON.stringify(incidentSeed) : "none fou
 
 Investigate this objective independently. The priority signals are hints, not facts.
 The verified incident row is the best matching recent ClickHouse incident and
-may be used directly. Cross-reference other telemetry when the objective requires it.
-Choose the visual from the returned data shape, not from the specialist label.
+may anchor the investigation. It is sufficient by itself only for a verdict;
+series and rows deliverables must query supporting telemetry. Choose the exact
+visual within the assigned deliverable from the returned data shape.
 Specialist position: ${index + 1} of ${specialists.length}.`);
 
   try {
@@ -349,16 +384,21 @@ Specialist position: ${index + 1} of ${specialists.length}.`);
         return;
       }
       const rawSubmission = extractSubmission(result.value);
+      if (rawSubmission?.kind === "unavailable") {
+        unavailable.push(rawSubmission.reason);
+        return;
+      }
       const submission =
-        rawSubmission && isUsefulSubmission(rawSubmission)
+        rawSubmission &&
+        visualKindSupportsDeliverable(
+          specialists[index].deliverable,
+          rawSubmission.kind,
+        ) &&
+        isUsefulSubmission(rawSubmission)
           ? rawSubmission
           : null;
       if (!submission) {
         unavailable.push(`${specialists[index].label} returned no visual`);
-        return;
-      }
-      if (submission.kind === "unavailable") {
-        unavailable.push(submission.reason);
         return;
       }
       panels.push(toPanel(submission, specialists[index], episodeId));
@@ -398,8 +438,9 @@ Specialist position: ${index + 1} of ${specialists.length}.`);
 export const investigateWithTeam = tool({
   description:
     "Fan out a substantive ClickHouse investigation to a prompt-specific team " +
-    "of one to four durable specialists chosen by the orchestrator. Each specialist selects " +
-    "its own best interactive visual after querying the data, then compose every " +
+    "of one to four durable specialists chosen by the orchestrator. Give each specialist a " +
+    "verdict, series, or rows deliverable; it selects the best compatible interactive visual " +
+    "after querying the data, then compose every " +
     "supported result into one ordered multi-level visual answer. Use this for " +
     "incident details, diagnosis, comparisons, and 'why' questions. Do not use " +
     "it for a simple table/schema inventory.",
