@@ -10,13 +10,17 @@ import {
 import { useState } from "react";
 import {
   safeParseChartSpec,
+  safeParseHeatmapSpec,
   safeParseMetricSpec,
   safeParseTableSpec,
+  safeParseTraceSpec,
 } from "@/lib/telemetry/chart-spec";
 import {
   ChartSpecView,
+  HeatmapSpecView,
   MetricGrid,
   TableExplorer,
+  TraceSpecView,
 } from "@/components/visualizations";
 import {
   safeParseVisualResponse,
@@ -32,6 +36,8 @@ export type VisualPanelPayload = {
   spec?: unknown;
   table?: unknown;
   metrics?: unknown;
+  heatmap?: unknown;
+  trace?: unknown;
   source?: string;
 };
 
@@ -40,9 +46,17 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
   const chart = safeParseChartSpec(data.spec);
   const table = safeParseTableSpec(data.table);
   const metrics = safeParseMetricSpec(data.metrics);
+  const heatmap = safeParseHeatmapSpec(data.heatmap);
+  const trace = safeParseTraceSpec(data.trace);
   const title =
-    data.title ?? chart?.title ?? table?.title ?? metrics?.title ?? "Visual answer";
-  const hasVisual = Boolean(chart || table || metrics);
+    data.title ??
+    chart?.title ??
+    table?.title ??
+    metrics?.title ??
+    heatmap?.title ??
+    trace?.title ??
+    "Visual answer";
+  const hasVisual = Boolean(chart || table || metrics || heatmap || trace);
 
   return (
     <section className={`agent-visual-card${expanded ? " expanded" : ""}`}>
@@ -68,6 +82,8 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
         {chart && <ChartSpecView spec={chart} />}
         {table && <TableExplorer spec={table} />}
         {metrics && <MetricGrid spec={metrics} />}
+        {heatmap && <HeatmapSpecView spec={heatmap} />}
+        {trace && <TraceSpecView spec={trace} />}
         {!hasVisual && (
           <div
             className={
@@ -104,6 +120,12 @@ function panelPayload(panel: VisualPanel): VisualPanelPayload {
   if (panel.kind === "table") {
     return { ...panel, status: "complete", table: panel.table };
   }
+  if (panel.kind === "heatmap") {
+    return { ...panel, status: "complete", heatmap: panel.heatmap };
+  }
+  if (panel.kind === "trace") {
+    return { ...panel, status: "complete", trace: panel.trace };
+  }
   return { ...panel, status: "complete", metrics: panel.metrics };
 }
 
@@ -132,7 +154,7 @@ export function VisualResponseGroup({
       <header>
         <div className="agent-response-heading">
           <span>
-            <BrainCircuit size={14} /> Multi-agent investigation
+            <BrainCircuit size={14} /> Adaptive investigation
           </span>
           <h2>{response.title}</h2>
           <p>{response.verdict}</p>
@@ -173,7 +195,7 @@ export function VisualResponseGroup({
       ) : (
         <div className="agent-response-empty">
           <Layers3 size={20} />
-          No visual was supportable from the available ClickHouse data.
+          The investigators could not validate a visual from this data.
         </div>
       )}
     </section>

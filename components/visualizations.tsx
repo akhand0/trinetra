@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import type {
   ChartSpec,
+  HeatmapSpec,
   MetricSpec,
   TableSpec,
+  TraceSpec,
 } from "@/lib/telemetry/chart-spec";
 import type {
   HeatCell,
@@ -427,6 +429,139 @@ export function MetricGrid({ spec }: { spec: MetricSpec }) {
           )}
         </article>
       ))}
+    </div>
+  );
+}
+
+function formatVisualNumber(value: number) {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+export function HeatmapSpecView({ spec }: { spec: HeatmapSpec }) {
+  const rows = Array.from(new Set(spec.cells.map((cell) => cell.row)));
+  const columns = Array.from(new Set(spec.cells.map((cell) => cell.column)));
+  const values = spec.cells.map((cell) => cell.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const peak = spec.cells.reduce((best, cell) =>
+    cell.value > best.value ? cell : best,
+  );
+  const [selected, setSelected] = useState(peak);
+
+  return (
+    <div className="visual-heatmap-spec">
+      <div
+        className="visual-heatmap-grid"
+        style={{
+          gridTemplateColumns: `minmax(84px, auto) repeat(${columns.length}, minmax(34px, 1fr))`,
+        }}
+        role="grid"
+        aria-label={spec.title}
+      >
+        <span aria-hidden="true" />
+        {columns.map((column) => (
+          <span className="visual-heatmap-column" key={column}>
+            {column}
+          </span>
+        ))}
+        {rows.map((row) => (
+          <div className="visual-heatmap-row" key={row}>
+            <strong>{row}</strong>
+            {columns.map((column) => {
+              const cell = spec.cells.find(
+                (candidate) =>
+                  candidate.row === row && candidate.column === column,
+              );
+              const value = cell?.value ?? 0;
+              const intensity = Math.max(0, Math.min(1, (value - min) / range));
+              const isSelected =
+                selected.row === row && selected.column === column;
+              return (
+                <button
+                  type="button"
+                  className={isSelected ? "is-selected" : ""}
+                  key={`${row}-${column}`}
+                  aria-label={`${row}, ${column}: ${formatVisualNumber(value)} ${spec.valueLabel ?? ""}`.trim()}
+                  aria-pressed={isSelected}
+                  onClick={() =>
+                    setSelected(cell ?? { row, column, value: 0 })
+                  }
+                  style={{
+                    background: `color-mix(in srgb, var(--violet) ${Math.round(10 + intensity * 78)}%, transparent)`,
+                  }}
+                >
+                  <span>{formatVisualNumber(value)}</span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="visual-selected-detail" aria-live="polite">
+        <strong>{selected.row}</strong>
+        <span>{selected.column}</span>
+        <b>
+          {formatVisualNumber(selected.value)} {spec.valueLabel}
+        </b>
+      </div>
+    </div>
+  );
+}
+
+export function TraceSpecView({ spec }: { spec: TraceSpec }) {
+  const slowest = spec.spans.reduce((best, span) =>
+    span.durationMs > best.durationMs ? span : best,
+  );
+  const [selectedId, setSelectedId] = useState(slowest.id);
+  const selected =
+    spec.spans.find((span) => span.id === selectedId) ?? slowest;
+
+  return (
+    <div className="visual-trace-spec">
+      <div className="visual-trace-scale" aria-hidden="true">
+        <span>0 ms</span>
+        <span>{formatVisualNumber(spec.totalDurationMs / 2)} ms</span>
+        <span>{formatVisualNumber(spec.totalDurationMs)} ms</span>
+      </div>
+      <div aria-label={spec.title}>
+        {spec.spans.map((span) => {
+          const left = Math.min(
+            100,
+            Math.max(0, (span.startMs / spec.totalDurationMs) * 100),
+          );
+          const width = Math.min(
+            100 - left,
+            Math.max(1.25, (span.durationMs / spec.totalDurationMs) * 100),
+          );
+          return (
+            <button
+              type="button"
+              className={`visual-trace-row${selectedId === span.id ? " is-selected" : ""}`}
+              key={span.id}
+              aria-pressed={selectedId === span.id}
+              onClick={() => setSelectedId(span.id)}
+            >
+              <span className="visual-trace-label">
+                <strong>{span.service}</strong>
+                <small>{span.operation}</small>
+              </span>
+              <span className="visual-trace-track">
+                <i
+                  className={span.status}
+                  style={{ left: `${left}%`, width: `${width}%` }}
+                />
+              </span>
+              <b>{formatVisualNumber(span.durationMs)} ms</b>
+            </button>
+          );
+        })}
+      </div>
+      <div className="visual-selected-detail" aria-live="polite">
+        <strong>{selected.service}</strong>
+        <span>{selected.operation}</span>
+        <b>{formatVisualNumber(selected.durationMs)} ms</b>
+      </div>
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
 import { panelTemplate } from "@/lib/telemetry/panels";
 import type { PanelData, Posterior, ProbeArm } from "@/lib/types";
 import {
+  investigationPlanSchema,
   investigateWithTeam,
   runInvestigationTeam,
 } from "./investigation-team";
@@ -447,13 +448,14 @@ unable to send email. Do not investigate data or call any other tool.`,
         ...clickHouseTools,
         investigateWithTeam: tool({
           description: investigateWithTeam.description ?? "",
-          inputSchema: z.object({}),
-          execute: async (_, { abortSignal }) =>
+          inputSchema: investigationPlanSchema,
+          execute: async (plan, { abortSignal }) =>
             runInvestigationTeam(
               {
                 query,
                 episodeId,
                 priorityArms: choices.map((choice) => choice.arm),
+                plan,
               },
               abortSignal,
             ),
@@ -481,7 +483,8 @@ Use these sampled probes as priority signals, not predetermined conclusions.
 investigateWithTeam is already bound to the current prompt, episode
 "${episodeId}", and priority arms: ${choices
           .map((choice) => choice.arm)
-          .join(", ")}. Call it without arguments.
+          .join(", ")}. Its only input is your prompt-specific investigation
+plan.
 
 ${toolSurfaceNote}
 
@@ -489,11 +492,16 @@ Choose the response depth from the prompt:
 1. For a simple inventory or schema question, inspect ClickHouse directly and
    render one searchable table. This is intentionally a single-view answer.
 2. For incident detail, diagnosis, comparison, or "why" questions, call
-   investigateWithTeam exactly once. It runs verdict, trend, and evidence
-   specialists in parallel. Each specialist chooses metrics, chart, or table
-   from the actual ClickHouse result shape, then every supported result is
-   composed into one ordered multi-level canvas. Do not prescribe a fixed
-   format or duplicate its panels with direct render calls.
+   investigateWithTeam exactly once. Design a fresh team of 1-4 specialists
+   for this prompt. Give each a distinct, concrete objective; choose its depth
+   (overview/analysis/evidence) and layout span (full/half). Use one specialist
+   when one visual can answer decisively, two complementary specialists for a
+   focused diagnosis, and three or four only when the question genuinely needs
+   multiple independent views. Never reuse a fixed verdict/trend/evidence trio.
+   Each specialist independently chooses metrics, chart, table, heatmap, or a
+   trace waterfall from its actual ClickHouse result shape. Do not prescribe
+   renderer types in objectives and do not duplicate its visuals with direct
+   render calls.
 3. If a team specialist reports unavailable evidence, preserve the partial
    answer. Never invent a missing trend or metric just to fill a slot.
 4. For direct single-view questions, choose the renderer only after inspecting

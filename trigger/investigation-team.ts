@@ -19,7 +19,19 @@ const PROBE_ARMS = [
   "cardinality_scan",
 ] as const;
 
-type SpecialistLens = "overview" | "trend" | "evidence";
+const visualAssignmentSchema = z.object({
+  id: z.string().min(1).max(40),
+  label: z.string().min(2).max(48),
+  objective: z.string().min(12).max(420),
+  level: z.enum(["overview", "analysis", "evidence"]),
+  span: z.enum(["full", "half"]),
+});
+
+export const investigationPlanSchema = z.object({
+  specialists: z.array(visualAssignmentSchema).min(1).max(4),
+});
+
+type VisualAssignment = z.infer<typeof visualAssignmentSchema>;
 
 const incidentSeedSchema = z.object({
   incident_id: z.string(),
@@ -34,35 +46,66 @@ const incidentSeedSchema = z.object({
 
 type IncidentSeed = z.infer<typeof incidentSeedSchema>;
 
-const SPECIALISTS: Array<{
-  lens: SpecialistLens;
-  label: string;
-  level: VisualPanel["level"];
-  span: VisualPanel["span"];
-  eyebrow: string;
-}> = [
-  {
-    lens: "overview",
-    label: "Verdict analyst",
-    level: "overview",
-    span: "full",
-    eyebrow: "Overview · Verdict analyst",
-  },
-  {
-    lens: "trend",
-    label: "Trend analyst",
-    level: "analysis",
-    span: "full",
-    eyebrow: "Analysis · Trend analyst",
-  },
-  {
-    lens: "evidence",
-    label: "Evidence analyst",
-    level: "evidence",
-    span: "full",
-    eyebrow: "Evidence · Row explorer",
-  },
-];
+function fallbackAssignments(query: string): VisualAssignment[] {
+  if (/\b(trace|span|waterfall|critical path)\b/i.test(query)) {
+    return [
+      {
+        id: "critical-path",
+        label: "Critical-path investigator",
+        objective:
+          "Find the single trace and span sequence that most directly answers the prompt.",
+        level: "overview",
+        span: "full",
+      },
+      {
+        id: "trace-context",
+        label: "Trace context analyst",
+        objective:
+          "Compare the selected trace with nearby telemetry only when it adds decision-useful context.",
+        level: "analysis",
+        span: "half",
+      },
+    ];
+  }
+  if (/\b(cluster|heatmap|where and when|across services)\b/i.test(query)) {
+    return [
+      {
+        id: "pattern",
+        label: "Pattern investigator",
+        objective:
+          "Locate the strongest two-dimensional concentration in the requested services and time window.",
+        level: "overview",
+        span: "full",
+      },
+      {
+        id: "outlier",
+        label: "Outlier verifier",
+        objective:
+          "Verify the dominant cluster and expose the smallest useful set of supporting evidence.",
+        level: "evidence",
+        span: "half",
+      },
+    ];
+  }
+  return [
+    {
+      id: "lead",
+      label: "Lead investigator",
+      objective:
+        "Find the highest-signal data-backed answer and choose the visual that communicates it best.",
+      level: "overview",
+      span: "full",
+    },
+    {
+      id: "counterfactual",
+      label: "Counterfactual analyst",
+      objective:
+        "Test the leading explanation against the strongest alternative explanation in the data.",
+      level: "analysis",
+      span: "half",
+    },
+  ];
+}
 
 function titleFor(query: string) {
   const incidentId = query.match(
@@ -125,13 +168,20 @@ async function loadIncidentSeed(query: string): Promise<IncidentSeed | null> {
 }
 
 function looksUnavailable(value: unknown) {
-  return /\b(unavailable|not available|missing|no data|lack of|required table)\b/i.test(
+  return /\b(unavailable|not available|missing|no data|lack of|required table|0 rows?|zero rows?|next step|data range check)\b/i.test(
     String(value ?? ""),
   );
 }
 
 function isUsefulSubmission(submission: VisualSubmission) {
   if (submission.kind === "unavailable") return false;
+  if (
+    /\b(placeholder|dummy|fake data|sample data|example data|todo)\b/i.test(
+      JSON.stringify(submission),
+    )
+  ) {
+    return false;
+  }
   if (submission.kind === "chart") {
     const xField = submission.spec.x.field;
     const buckets = new Set(
@@ -144,83 +194,23 @@ function isUsefulSubmission(submission: VisualSubmission) {
       (item) => !looksUnavailable(item.value) && !looksUnavailable(item.detail),
     );
   }
+  if (submission.kind === "heatmap") {
+    const rows = new Set(submission.heatmap.cells.map((cell) => cell.row));
+    const columns = new Set(
+      submission.heatmap.cells.map((cell) => cell.column),
+    );
+    return (
+      submission.heatmap.cells.length >= 4 &&
+      rows.size >= 2 &&
+      columns.size >= 2
+    );
+  }
+  if (submission.kind === "trace") {
+    return submission.trace.spans.some((span) => span.durationMs > 0);
+  }
   return submission.table.rows.some((row) =>
     Object.values(row).some((value) => !looksUnavailable(value)),
   );
-}
-
-function fallbackFromIncidentSeed(
-  seed: IncidentSeed | null,
-  lens: SpecialistLens,
-): VisualSubmission | null {
-  if (!seed || lens === "trend") return null;
-
-  if (lens === "overview") {
-    return visualSubmissionSchema.parse({
-      title: "Verified incident verdict",
-      finding: seed.notes,
-      source: "incident_labels",
-      metrics: {
-        title: "Verified incident verdict",
-        items: [
-          {
-            label: "Culprit service",
-            value: seed.culprit_service,
-            detail: "Labeled incident owner",
-            tone: "bad",
-          },
-          {
-            label: "Failure mode",
-            value: seed.culprit_kind.replaceAll("_", " "),
-            detail: seed.context_bucket.replaceAll("_", " "),
-            tone: "bad",
-          },
-          {
-            label: "Strongest signal",
-            value: seed.best_arm.replaceAll("_", " "),
-            detail: "Best-performing investigation arm",
-            tone: "warning",
-          },
-          {
-            label: "Incident window",
-            value: `${seed.window_start.slice(11, 16)}–${seed.window_end.slice(11, 16)}`,
-            detail: seed.window_start.slice(0, 10),
-            tone: "neutral",
-          },
-        ],
-      },
-      kind: "metrics",
-    });
-  }
-
-  return visualSubmissionSchema.parse({
-    title: "Verified incident evidence",
-    finding: seed.notes,
-    source: "incident_labels",
-    table: {
-      title: "Verified incident evidence",
-      columns: [
-        { key: "window", label: "Window" },
-        { key: "context", label: "Context" },
-        { key: "service", label: "Service" },
-        { key: "failure", label: "Failure mode" },
-        { key: "signal", label: "Best signal" },
-        { key: "evidence", label: "Evidence" },
-      ],
-      rows: [
-        {
-          window: `${seed.window_start} → ${seed.window_end}`,
-          context: seed.context_bucket,
-          service: seed.culprit_service,
-          failure: seed.culprit_kind,
-          signal: seed.best_arm,
-          evidence: seed.notes,
-        },
-      ],
-      searchPlaceholder: "Filter verified evidence…",
-    },
-    kind: "table",
-  });
 }
 
 function extractSubmission(result: {
@@ -238,15 +228,25 @@ function extractSubmission(result: {
 
 function toPanel(
   submission: Exclude<VisualSubmission, { kind: "unavailable" }>,
-  specialist: (typeof SPECIALISTS)[number],
+  specialist: VisualAssignment,
   episodeId: string,
 ): VisualPanel {
+  const visualTitle =
+    submission.kind === "metrics"
+      ? submission.metrics.title
+      : submission.kind === "chart"
+        ? submission.spec.title ?? specialist.label
+        : submission.kind === "table"
+          ? submission.table.title
+          : submission.kind === "heatmap"
+            ? submission.heatmap.title
+            : submission.trace.title;
   const base = {
-    id: `${episodeId}-${specialist.lens}`,
+    id: `${episodeId}-${specialist.id}`,
     level: specialist.level,
     span: specialist.span,
-    title: submission.title,
-    eyebrow: specialist.eyebrow,
+    title: visualTitle,
+    eyebrow: `${specialist.level} · ${specialist.label}`,
     finding: submission.finding,
     source: submission.source,
   };
@@ -257,13 +257,20 @@ function toPanel(
   if (submission.kind === "chart") {
     return { ...base, kind: "chart", spec: submission.spec };
   }
-  return { ...base, kind: "table", table: submission.table };
+  if (submission.kind === "table") {
+    return { ...base, kind: "table", table: submission.table };
+  }
+  if (submission.kind === "heatmap") {
+    return { ...base, kind: "heatmap", heatmap: submission.heatmap };
+  }
+  return { ...base, kind: "trace", trace: submission.trace };
 }
 
 type InvestigationTeamInput = {
   query: string;
   episodeId?: string;
   priorityArms?: Array<(typeof PROBE_ARMS)[number]>;
+  plan?: z.infer<typeof investigationPlanSchema>;
 };
 
 type InvestigationTeamOptions = {
@@ -285,42 +292,44 @@ export async function runInvestigationTeam(
   const publish = options?.publish ?? streamVisualResponse;
   const responseId = `investigation-${episodeId}`;
   const title = titleFor(query);
+  const parsedPlan = investigationPlanSchema.safeParse(input.plan);
+  const specialists = parsedPlan.success
+    ? parsedPlan.data.specialists
+    : fallbackAssignments(query);
   const running: VisualResponseData = {
     id: responseId,
     query,
     title,
-    verdict: "Three specialists are inspecting ClickHouse in parallel…",
+    verdict: `${specialists.length} prompt-specific investigator${specialists.length === 1 ? " is" : "s are"} inspecting ClickHouse…`,
     status: "running",
-    specialists: SPECIALISTS.map((specialist) => specialist.label),
+    specialists: specialists.map((specialist) => specialist.label),
     panels: [],
   };
   await publish(running);
   const incidentSeed = await loadIncidentSeed(query);
 
-  const chats = SPECIALISTS.map(
+  const chats = specialists.map(
     (specialist) =>
       new AgentChat<typeof trinetraSpecialistAgent>({
         agent: "trinetra-specialist",
-        id: `${episodeId}-${specialist.lens}`,
+        id: `${episodeId}-${specialist.id}`,
       }),
   );
 
-  const assignments = SPECIALISTS.map((specialist, index) => `LENS: ${specialist.lens}
+  const assignments = specialists.map((specialist, index) => `SPECIALIST: ${specialist.label}
+OBJECTIVE: ${specialist.objective}
+DEPTH: ${specialist.level}
+LAYOUT: ${specialist.span}
 USER PROMPT: ${query}
 PRIORITY SIGNALS: ${priorityArms.join(", ")}
 EPISODE: ${episodeId}
 VERIFIED INCIDENT ROW: ${incidentSeed ? JSON.stringify(incidentSeed) : "none found"}
 
-Investigate this lens independently. The priority signals are hints, not facts.
+Investigate this objective independently. The priority signals are hints, not facts.
 The verified incident row is the best matching recent ClickHouse incident and
-may be used directly. Cross-reference other telemetry when the lens requires it. ${
-      specialist.lens === "overview"
-        ? "Expose the highest-signal verdict in the most immediately understandable visual form."
-        : specialist.lens === "trend"
-          ? "Find the strongest relationship, change, distribution, or comparison and choose the visual that reveals it best."
-          : "Make the strongest supporting evidence explorable with only decision-useful data."
-    }
-Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
+may be used directly. Cross-reference other telemetry when the objective requires it.
+Choose the visual from the returned data shape, not from the specialist label.
+Specialist position: ${index + 1} of ${specialists.length}.`);
 
   try {
     const settled = await Promise.allSettled(
@@ -336,27 +345,23 @@ Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
     const unavailable: string[] = [];
     settled.forEach((result, index) => {
       if (result.status === "rejected") {
-        unavailable.push(`${SPECIALISTS[index].label} failed`);
+        unavailable.push(`${specialists[index].label} failed`);
         return;
       }
       const rawSubmission = extractSubmission(result.value);
-      const fallback = fallbackFromIncidentSeed(
-        incidentSeed,
-        SPECIALISTS[index].lens,
-      );
       const submission =
         rawSubmission && isUsefulSubmission(rawSubmission)
           ? rawSubmission
-          : fallback;
+          : null;
       if (!submission) {
-        unavailable.push(`${SPECIALISTS[index].label} returned no visual`);
+        unavailable.push(`${specialists[index].label} returned no visual`);
         return;
       }
       if (submission.kind === "unavailable") {
         unavailable.push(submission.reason);
         return;
       }
-      panels.push(toPanel(submission, SPECIALISTS[index], episodeId));
+      panels.push(toPanel(submission, specialists[index], episodeId));
     });
 
     const verdict =
@@ -370,7 +375,7 @@ Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
       title,
       verdict,
       status: "complete",
-      specialists: SPECIALISTS.map((specialist) => specialist.label),
+      specialists: specialists.map((specialist) => specialist.label),
       panels,
     };
     await publish(complete);
@@ -392,8 +397,8 @@ Specialist position: ${index + 1} of ${SPECIALISTS.length}.`);
 
 export const investigateWithTeam = tool({
   description:
-    "Fan out a substantive ClickHouse investigation to three parallel durable " +
-    "specialists (verdict, analysis, and evidence). Each specialist selects " +
+    "Fan out a substantive ClickHouse investigation to a prompt-specific team " +
+    "of one to four durable specialists chosen by the orchestrator. Each specialist selects " +
     "its own best interactive visual after querying the data, then compose every " +
     "supported result into one ordered multi-level visual answer. Use this for " +
     "incident details, diagnosis, comparisons, and 'why' questions. Do not use " +
@@ -406,6 +411,7 @@ export const investigateWithTeam = tool({
       .describe("Copy the user's current prompt verbatim, including IDs."),
     episodeId: z.string().min(1).optional(),
     priorityArms: z.array(z.enum(PROBE_ARMS)).min(1).max(3).optional(),
+    plan: investigationPlanSchema.optional(),
   }),
   execute: async (input, { abortSignal }) =>
     runInvestigationTeam(input, abortSignal),

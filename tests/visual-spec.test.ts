@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  safeParseHeatmapSpec,
   safeParseMetricSpec,
   safeParseTableSpec,
+  safeParseTraceSpec,
 } from "@/lib/telemetry/chart-spec";
-import { safeParseVisualResponse } from "@/lib/telemetry/visual-response";
+import {
+  safeParseVisualResponse,
+  tableSubmissionSchema,
+} from "@/lib/telemetry/visual-response";
+import { investigationPlanSchema } from "@/trigger/investigation-team";
 
 describe("visual response contracts", () => {
   it("accepts a searchable table payload", () => {
@@ -33,6 +39,79 @@ describe("visual response contracts", () => {
     });
 
     expect(spec?.items[0].tone).toBe("neutral");
+  });
+
+  it("accepts an agent-composed heatmap", () => {
+    const spec = safeParseHeatmapSpec({
+      title: "Errors by service and minute",
+      valueLabel: "errors",
+      cells: [
+        { row: "payments-api", column: "10:01", value: 2 },
+        { row: "payments-api", column: "10:02", value: 19 },
+      ],
+    });
+
+    expect(spec?.cells[1].value).toBe(19);
+  });
+
+  it("accepts an agent-composed trace waterfall", () => {
+    const spec = safeParseTraceSpec({
+      title: "Slow checkout trace",
+      traceId: "trace-1",
+      totalDurationMs: 312,
+      spans: [
+        {
+          id: "span-1",
+          service: "payments-api",
+          operation: "pool.acquire",
+          startMs: 45,
+          durationMs: 180,
+          status: "error",
+        },
+      ],
+    });
+
+    expect(spec?.spans[0].status).toBe("error");
+  });
+
+  it("accepts a renderer submission with one visual title", () => {
+    const result = tableSubmissionSchema.safeParse({
+      finding:
+        "Only five error spans exist around the incident window, concentrated in flagd with isolated errors in payment, recommendation, and ad services.",
+      source: "ClickHouse otel_traces",
+      table: {
+        title: "Error spans by service",
+        columns: [{ key: "service", label: "Service" }],
+        rows: [{ service: "flagd" }],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a prompt-specific investigation team and layout", () => {
+    const result = investigationPlanSchema.safeParse({
+      specialists: [
+        {
+          id: "cluster-map",
+          label: "Cluster cartographer",
+          objective:
+            "Locate the strongest service-by-time concentration around the regression.",
+          level: "overview",
+          span: "full",
+        },
+        {
+          id: "verification",
+          label: "Signal verifier",
+          objective:
+            "Check whether the dominant concentration survives comparison with adjacent telemetry.",
+          level: "evidence",
+          span: "half",
+        },
+      ],
+    });
+
+    expect(result.success && result.data.specialists).toHaveLength(2);
   });
 
   it("accepts an empty running multi-agent response", () => {

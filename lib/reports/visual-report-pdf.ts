@@ -1,8 +1,10 @@
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import type {
   ChartSpec,
+  HeatmapSpec,
   MetricSpec,
   TableSpec,
+  TraceSpec,
 } from "@/lib/telemetry/chart-spec";
 import type {
   VisualPanel,
@@ -423,6 +425,144 @@ function drawTable(doc: PDFKit.PDFDocument, spec: TableSpec) {
   });
 }
 
+function drawHeatmap(doc: PDFKit.PDFDocument, spec: HeatmapSpec) {
+  const rows = Array.from(new Set(spec.cells.map((cell) => cell.row)));
+  const columns = Array.from(new Set(spec.cells.map((cell) => cell.column)));
+  const values = spec.cells.map((cell) => cell.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const boxX = PAGE_MARGIN;
+  const boxY = doc.y;
+  const boxWidth = doc.page.width - PAGE_MARGIN * 2;
+  const labelWidth = 96;
+  const gap = 5;
+  const cellWidth = Math.max(
+    22,
+    (boxWidth - labelWidth - gap * Math.max(columns.length - 1, 0)) /
+      Math.max(columns.length, 1),
+  );
+  const cellHeight = 35;
+  const boxHeight = 54 + rows.length * (cellHeight + gap);
+  roundedCard(doc, boxX, boxY, boxWidth, boxHeight);
+
+  columns.forEach((column, index) => {
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(7)
+      .fillColor(COLORS.faint)
+      .text(text(column), boxX + labelWidth + index * (cellWidth + gap), boxY + 18, {
+        width: cellWidth,
+        align: "center",
+        ellipsis: true,
+      });
+  });
+
+  rows.forEach((row, rowIndex) => {
+    const y = boxY + 42 + rowIndex * (cellHeight + gap);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(7.5)
+      .fillColor(COLORS.muted)
+      .text(text(row), boxX + 12, y + 13, {
+        width: labelWidth - 20,
+        ellipsis: true,
+      });
+    columns.forEach((column, columnIndex) => {
+      const cell = spec.cells.find(
+        (candidate) =>
+          candidate.row === row && candidate.column === column,
+      );
+      const value = cell?.value ?? 0;
+      const intensity = Math.max(0, Math.min(1, (value - min) / range));
+      const x = boxX + labelWidth + columnIndex * (cellWidth + gap);
+      doc
+        .save()
+        .fillOpacity(0.1 + intensity * 0.82)
+        .roundedRect(x, y, cellWidth, cellHeight, 5)
+        .fill(COLORS.purple)
+        .restore();
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(7)
+        .fillColor(intensity > 0.55 ? COLORS.card : COLORS.ink)
+        .text(value.toLocaleString(undefined, { maximumFractionDigits: 2 }), x, y + 13, {
+          width: cellWidth,
+          align: "center",
+        });
+    });
+  });
+  doc.y = boxY + boxHeight + 8;
+}
+
+function drawTrace(doc: PDFKit.PDFDocument, spec: TraceSpec) {
+  const boxX = PAGE_MARGIN;
+  const boxY = doc.y;
+  const boxWidth = doc.page.width - PAGE_MARGIN * 2;
+  const labelWidth = 142;
+  const durationWidth = 54;
+  const laneWidth = boxWidth - labelWidth - durationWidth - 36;
+  const rowHeight = 38;
+  const shown = spec.spans.slice(0, 18);
+  const boxHeight = 48 + shown.length * rowHeight;
+  roundedCard(doc, boxX, boxY, boxWidth, boxHeight);
+
+  [0, 0.5, 1].forEach((position) => {
+    const x = boxX + 18 + labelWidth + laneWidth * position;
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .fillColor(COLORS.faint)
+      .text(`${Math.round(spec.totalDurationMs * position)} ms`, x - 24, boxY + 16, {
+        width: 48,
+        align: "center",
+      });
+  });
+
+  shown.forEach((span, index) => {
+    const y = boxY + 40 + index * rowHeight;
+    const left = Math.max(0, (span.startMs / spec.totalDurationMs) * laneWidth);
+    const width = Math.max(
+      3,
+      Math.min(
+        laneWidth - left,
+        (span.durationMs / spec.totalDurationMs) * laneWidth,
+      ),
+    );
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(7.5)
+      .fillColor(COLORS.ink)
+      .text(text(span.service), boxX + 12, y + 3, {
+        width: labelWidth - 18,
+        ellipsis: true,
+      })
+      .font("Helvetica")
+      .fontSize(6.8)
+      .fillColor(COLORS.faint)
+      .text(text(span.operation), boxX + 12, y + 16, {
+        width: labelWidth - 18,
+        ellipsis: true,
+      });
+    doc
+      .save()
+      .rect(boxX + 18 + labelWidth, y + 8, laneWidth, 14)
+      .fill(COLORS.paper)
+      .roundedRect(boxX + 18 + labelWidth + left, y + 10, width, 10, 3)
+      .fill(span.status === "error" ? COLORS.red : COLORS.blue)
+      .restore();
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text(`${span.durationMs.toLocaleString(undefined, { maximumFractionDigits: 2 })} ms`, boxX + boxWidth - durationWidth - 8, y + 11, {
+        width: durationWidth,
+        align: "right",
+      });
+  });
+  doc.y = boxY + boxHeight + 8;
+}
+
 function drawCover(
   doc: PDFKit.PDFDocument,
   report: VisualResponseData,
@@ -508,7 +648,9 @@ function drawPanel(doc: PDFKit.PDFDocument, panel: VisualPanel) {
   panelHeading(doc, panel);
   if (panel.kind === "metrics") drawMetrics(doc, panel.metrics);
   else if (panel.kind === "chart") drawChart(doc, panel.spec);
-  else drawTable(doc, panel.table);
+  else if (panel.kind === "table") drawTable(doc, panel.table);
+  else if (panel.kind === "heatmap") drawHeatmap(doc, panel.heatmap);
+  else drawTrace(doc, panel.trace);
 }
 
 function addFooters(doc: PDFKit.PDFDocument, report: VisualResponseData) {

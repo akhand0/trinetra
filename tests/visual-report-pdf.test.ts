@@ -34,6 +34,51 @@ const report: VisualResponseData = {
         ],
       },
     },
+    {
+      id: "analysis",
+      kind: "heatmap",
+      level: "analysis",
+      span: "full",
+      title: "Error concentration",
+      eyebrow: "Analysis",
+      finding: "Errors concentrate on payments-api after deployment.",
+      source: "otel_logs",
+      heatmap: {
+        title: "Errors by service and minute",
+        valueLabel: "errors",
+        cells: [
+          { row: "payments-api", column: "10:01", value: 2 },
+          { row: "payments-api", column: "10:02", value: 19 },
+          { row: "checkout", column: "10:01", value: 1 },
+          { row: "checkout", column: "10:02", value: 3 },
+        ],
+      },
+    },
+    {
+      id: "evidence",
+      kind: "trace",
+      level: "evidence",
+      span: "full",
+      title: "Slow trace",
+      eyebrow: "Evidence",
+      finding: "pool.acquire dominates the trace.",
+      source: "otel_traces",
+      trace: {
+        title: "Slow checkout trace",
+        traceId: "trace-1",
+        totalDurationMs: 312,
+        spans: [
+          {
+            id: "span-1",
+            service: "payments-api",
+            operation: "pool.acquire",
+            startMs: 45,
+            durationMs: 180,
+            status: "error",
+          },
+        ],
+      },
+    },
   ],
 };
 

@@ -34,7 +34,7 @@ function reportEmailHtml(report: VisualResponseData, runId: string) {
       <p style="margin:0 0 22px;color:#5d5662;font-size:15px;line-height:1.55">${escapeHtml(report.verdict)}</p>
       <div style="padding:16px 18px;border:1px solid #e8dcf3;border-radius:12px;background:#faf7fc">
         <strong>The complete visual report is attached as a PDF.</strong>
-        <p style="margin:7px 0 0;color:#6f6874">${report.panels.length} visual level${report.panels.length === 1 ? "" : "s"}: metrics, charts, and evidence tables.</p>
+        <p style="margin:7px 0 0;color:#6f6874">${report.panels.length} agent-selected interactive visual${report.panels.length === 1 ? "" : "s"}, including charts, heatmaps, traces, metrics, or evidence explorers.</p>
       </div>
       <p style="margin-top:24px;color:#8a838e;font-size:11px">Trigger.dev run ${escapeHtml(runId)}</p>
     </main>`;
