@@ -35,7 +35,7 @@ const metrics: VisualSubmission = {
   finding: "payments-api is the culprit.",
   metrics: {
     title: "Incident verdict",
-    items: [{ label: "Service", value: "payments-api" }],
+    items: [{ label: "Service", value: "payments-api", tone: "neutral" }],
   },
 };
 

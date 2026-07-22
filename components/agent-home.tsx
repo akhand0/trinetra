@@ -14,6 +14,11 @@ import {
   type VisualPanelPayload,
 } from "@/components/visual-response";
 import { safeParseVisualResponse } from "@/lib/telemetry/visual-response";
+import {
+  visibleSelectionActionText,
+  type InvestigationAction,
+  type InvestigationSelection,
+} from "@/lib/telemetry/investigation-selection";
 import type { trinetraAgent } from "@/trigger/agent";
 
 function normalizeAgentMarkdown(text: string) {
@@ -109,6 +114,7 @@ export function AgentHome() {
   const voiceCanceledRef = useRef(false);
   const awaitingVoiceReplyRef = useRef(false);
   const spokenMessageIdRef = useRef<string | null>(null);
+  const selectionSubmissionRef = useRef(false);
   const transport = useTriggerChatTransport<typeof trinetraAgent>({
     task: "trinetra-agent",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
@@ -118,6 +124,10 @@ export function AgentHome() {
   const { error, messages, sendMessage, status } = useChat({ transport });
   const isRunning = status === "submitted" || status === "streaming";
   const hasMessages = messages.length > 0;
+
+  useEffect(() => {
+    if (!isRunning) selectionSubmissionRef.current = false;
+  }, [isRunning]);
 
   useEffect(() => {
     if (!hasMessages) return;
@@ -172,6 +182,30 @@ export function AgentHome() {
     window.speechSynthesis?.cancel();
     setMessage("");
     void sendMessage({ text: prompt });
+  }
+
+  function investigateSelection(
+    action: InvestigationAction,
+    selection: InvestigationSelection,
+    originalQuery: string,
+  ) {
+    if (isRunning || selectionSubmissionRef.current) return;
+    selectionSubmissionRef.current = true;
+    awaitingVoiceReplyRef.current = false;
+    window.speechSynthesis?.cancel();
+    const text = visibleSelectionActionText(action, selection);
+    void sendMessage({
+      text,
+      metadata: {
+        followUp: {
+          action,
+          originalQuery,
+          selection,
+        },
+      },
+    }).catch(() => {
+      selectionSubmissionRef.current = false;
+    });
   }
 
   function toggleVoiceInput() {
@@ -340,6 +374,8 @@ export function AgentHome() {
                       <VisualResponseGroup
                         data={part.data}
                         query={previousUserPrompt?.text}
+                        onInvestigate={investigateSelection}
+                        disabled={isRunning}
                         key={partKey}
                       />
                     );

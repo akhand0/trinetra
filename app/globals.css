@@ -602,6 +602,106 @@ textarea {
   gap: 9px;
 }
 
+.visual-investigation-shelf {
+  margin: 14px 16px 0;
+  padding: 12px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid rgba(181, 106, 255, 0.3);
+  border-radius: 14px;
+  background:
+    linear-gradient(100deg, rgba(181, 106, 255, 0.11), transparent 52%),
+    rgba(9, 10, 14, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.visual-selection-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 10px;
+}
+
+.visual-selection-summary > i {
+  width: 32px;
+  height: 32px;
+  grid-row: span 3;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(181, 106, 255, 0.28);
+  border-radius: 10px;
+  color: #ca87ff;
+  background: rgba(181, 106, 255, 0.1);
+}
+
+.visual-selection-summary > span {
+  color: #bb71ef;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.visual-selection-summary > strong {
+  max-width: 580px;
+  overflow: hidden;
+  color: #efebf2;
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visual-selection-summary > small {
+  color: #7d828d;
+  font-size: 9px;
+}
+
+.visual-investigation-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.visual-investigation-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  color: #cac6cf;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 10px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.visual-investigation-actions button:hover:not(:disabled),
+.visual-investigation-actions button:focus-visible {
+  border-color: rgba(181, 106, 255, 0.42);
+  color: #f0e9f5;
+  background: rgba(181, 106, 255, 0.11);
+  outline: 0;
+}
+
+.visual-investigation-actions button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.visual-investigation-actions .visual-selection-clear {
+  width: 32px;
+  padding: 0;
+  color: #8c909a;
+}
+
 .visual-report-open,
 .visual-report-control button {
   min-height: 29px;
@@ -707,6 +807,20 @@ textarea {
 
 .agent-response-panel {
   min-width: 0;
+  transition: opacity 160ms ease, filter 160ms ease;
+}
+
+.agent-response-panel.selection-source .agent-visual-card {
+  border-color: rgba(202, 135, 255, 0.56);
+  box-shadow: 0 0 0 1px rgba(181, 106, 255, 0.1);
+}
+
+.agent-response-panel.selection-linked .agent-visual-card {
+  border-color: rgba(112, 217, 255, 0.26);
+}
+
+.agent-response-panel.selection-unlinked {
+  filter: saturate(0.78);
 }
 
 .agent-response-panel.span-full {
@@ -840,6 +954,22 @@ textarea {
   height: min(64vh, 620px);
 }
 
+.agent-visual-response:has(.agent-visual-card.expanded)
+  > .visual-investigation-shelf {
+  position: fixed;
+  right: 48px;
+  bottom: 42px;
+  left: 48px;
+  z-index: 310;
+  margin: 0;
+  backdrop-filter: blur(18px);
+}
+
+.agent-visual-response:has(.agent-visual-card.expanded)
+  .agent-visual-card.expanded {
+  padding-bottom: 88px;
+}
+
 .agent-visual-loading {
   min-height: 138px;
   display: grid;
@@ -971,6 +1101,54 @@ textarea {
   color: #eeebf0;
 }
 
+.visual-table-explorer .visual-row-action-heading,
+.visual-table-explorer .visual-row-action-cell {
+  width: 42px;
+  min-width: 42px;
+  padding: 0;
+  text-align: center;
+}
+
+.visual-row-action-cell button {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #8f949e;
+  background: transparent;
+  cursor: pointer;
+}
+
+.visual-row-action-cell button:hover,
+.visual-row-action-cell button:focus-visible,
+.visual-row-action-cell button[aria-pressed="true"] {
+  border-color: rgba(181, 106, 255, 0.45);
+  color: #e8d6f5;
+  background: rgba(181, 106, 255, 0.1);
+  outline: 0;
+}
+
+.visual-table-explorer tbody tr.relation-dimmed td {
+  color: #858a95;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.visual-table-explorer tbody tr.relation-related td {
+  color: #dff8ff;
+  background: rgba(112, 217, 255, 0.075);
+}
+
+.visual-table-explorer tbody tr.relation-selected td {
+  color: #f4eafd;
+  background: rgba(181, 106, 255, 0.13);
+}
+
+.visual-table-explorer tbody tr.relation-selected td:first-child {
+  box-shadow: inset 3px 0 #bd78ff;
+}
+
 .visual-table-more {
   width: fit-content;
   min-height: 32px;
@@ -1019,6 +1197,33 @@ textarea {
   border-radius: 14px;
   background: rgba(8, 10, 14, 0.32);
   box-shadow: none;
+}
+
+.agent-thread .visual-metric-grid article[role="button"] {
+  cursor: pointer;
+  transition: border-color 140ms ease, opacity 140ms ease, transform 140ms ease;
+}
+
+.agent-thread .visual-metric-grid article[role="button"]:hover,
+.agent-thread .visual-metric-grid article[role="button"]:focus-visible {
+  border-color: rgba(181, 106, 255, 0.38);
+  outline: 0;
+  transform: translateY(-1px);
+}
+
+.agent-thread .visual-metric-grid article.relation-dimmed {
+  border-color: rgba(255, 255, 255, 0.045);
+  filter: saturate(0.42);
+}
+
+.agent-thread .visual-metric-grid article.relation-related {
+  border-color: rgba(112, 217, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(112, 217, 255, 0.08);
+}
+
+.agent-thread .visual-metric-grid article.relation-selected {
+  border-color: rgba(202, 135, 255, 0.68);
+  box-shadow: 0 0 0 2px rgba(181, 106, 255, 0.12);
 }
 
 .visual-metric-grid article > span {
@@ -1165,10 +1370,34 @@ textarea {
 
 .visual-heatmap-row button:hover,
 .visual-heatmap-row button:focus-visible,
-.visual-heatmap-row button.is-selected {
+.visual-heatmap-row button.is-selected,
+.visual-heatmap-row button.relation-selected {
   border-color: var(--line-bright);
   outline: 2px solid color-mix(in srgb, var(--violet) 45%, transparent);
   outline-offset: 1px;
+}
+
+.visual-heatmap-row button.relation-related {
+  border-color: rgba(112, 217, 255, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(112, 217, 255, 0.28);
+}
+
+.visual-heatmap-row button.relation-dimmed {
+  border-color: rgba(255, 255, 255, 0.045);
+  filter: saturate(0.35);
+}
+
+.visual-heatmap-row button.is-missing {
+  border-color: rgba(255, 255, 255, 0.035);
+  color: #50545e;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.025),
+    rgba(255, 255, 255, 0.025) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  cursor: not-allowed;
 }
 
 .visual-heatmap-row button span {
@@ -1226,9 +1455,51 @@ textarea {
 
 .visual-trace-row:hover,
 .visual-trace-row:focus-visible,
-.visual-trace-row.is-selected {
+.visual-trace-row.is-selected,
+.visual-trace-row.relation-selected {
   background: color-mix(in srgb, var(--violet) 8%, transparent);
   outline: 0;
+}
+
+.visual-trace-row.relation-related {
+  background: rgba(112, 217, 255, 0.06);
+}
+
+.visual-trace-row.relation-related .visual-trace-track i {
+  box-shadow: 0 0 0 1px rgba(182, 239, 255, 0.8);
+}
+
+.visual-trace-row.relation-dimmed {
+  background: rgba(255, 255, 255, 0.012);
+  filter: saturate(0.38);
+}
+
+.visual-selectable-mark {
+  cursor: pointer;
+  transition: opacity 140ms ease, stroke-width 140ms ease;
+}
+
+.visual-selectable-mark.relation-dimmed {
+  opacity: 0.16 !important;
+}
+
+.visual-selectable-mark.relation-related {
+  opacity: 1 !important;
+  stroke: #a9eaff;
+  stroke-width: 2.4px;
+}
+
+.visual-selectable-mark.relation-selected {
+  opacity: 1 !important;
+  stroke: #efd9ff;
+  stroke-width: 3.4px;
+  filter: drop-shadow(0 0 5px rgba(189, 120, 255, 0.72));
+}
+
+.visual-selectable-mark:focus-visible {
+  outline: 0;
+  stroke: #ffffff;
+  stroke-width: 3px;
 }
 
 .visual-trace-label {
@@ -1630,6 +1901,41 @@ textarea {
     width: 100%;
     max-width: none;
     justify-items: start;
+  }
+
+  .visual-investigation-shelf {
+    margin: 9px 9px 0;
+    padding: 11px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .agent-visual-response:has(.agent-visual-card.expanded)
+    > .visual-investigation-shelf {
+    right: 18px;
+    bottom: 18px;
+    left: 18px;
+  }
+
+  .agent-visual-response:has(.agent-visual-card.expanded)
+    .agent-visual-card.expanded {
+    padding-bottom: 154px;
+  }
+
+  .visual-selection-summary > strong {
+    white-space: normal;
+  }
+
+  .visual-investigation-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 32px;
+  }
+
+  .visual-investigation-actions button {
+    padding: 0 7px;
+    font-size: 9px;
   }
 
   .visual-report-control {

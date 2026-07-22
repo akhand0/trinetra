@@ -287,6 +287,7 @@ function toPanel(
 
 type InvestigationTeamInput = {
   query: string;
+  displayQuery?: string;
   episodeId?: string;
   priorityArms?: Array<(typeof PROBE_ARMS)[number]>;
   plan?: z.infer<typeof investigationPlanSchema>;
@@ -302,6 +303,7 @@ export async function runInvestigationTeam(
   options?: InvestigationTeamOptions,
 ) {
   const query = input.query;
+  const displayQuery = input.displayQuery ?? query;
   const episodeId = input.episodeId ?? crypto.randomUUID();
   const priorityArms = input.priorityArms ?? [
     "latency_shift",
@@ -310,14 +312,14 @@ export async function runInvestigationTeam(
   ];
   const publish = options?.publish ?? streamVisualResponse;
   const responseId = `investigation-${episodeId}`;
-  const title = titleFor(query);
+  const title = titleFor(displayQuery);
   const parsedPlan = investigationPlanSchema.safeParse(input.plan);
   const specialists = parsedPlan.success
     ? parsedPlan.data.specialists
     : fallbackAssignments(query);
   const running: VisualResponseData = {
     id: responseId,
-    query,
+    query: displayQuery,
     title,
     verdict: `${specialists.length} prompt-specific investigator${specialists.length === 1 ? " is" : "s are"} inspecting ClickHouse…`,
     status: "running",
@@ -397,7 +399,7 @@ Specialist position: ${index + 1} of ${specialists.length}.`);
       "No supported visual could be built from the available ClickHouse data.";
     const complete: VisualResponseData = {
       id: responseId,
-      query,
+      query: displayQuery,
       title,
       verdict,
       status: "complete",

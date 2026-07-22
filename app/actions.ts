@@ -3,9 +3,10 @@
 import { auth, tasks } from "@trigger.dev/sdk";
 import { chat } from "@trigger.dev/sdk/ai";
 import type { visualReportTask } from "@/trigger/visual-report";
+import type { trinetraAgent } from "@/trigger/agent";
 
 export const startChatSession =
-  chat.createStartSessionAction("trinetra-agent");
+  chat.createStartSessionAction<typeof trinetraAgent>("trinetra-agent");
 
 export async function mintChatAccessToken(chatId: string) {
   return auth.createPublicToken({

@@ -2,12 +2,16 @@
 
 import {
   BrainCircuit,
+  Focus,
+  GitCompareArrows,
   Layers3,
   Maximize2,
   Minimize2,
+  ScanSearch,
   Sparkles,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   safeParseChartSpec,
   safeParseHeatmapSpec,
@@ -21,12 +25,19 @@ import {
   MetricGrid,
   TableExplorer,
   TraceSpecView,
+  type VisualInteraction,
 } from "@/components/visualizations";
 import {
   safeParseVisualResponse,
   type VisualPanel,
 } from "@/lib/telemetry/visual-response";
 import { VisualReportControl } from "@/components/visual-report-control";
+import {
+  selectionShortLabel,
+  visualPanelLinkState,
+  type InvestigationAction,
+  type InvestigationSelection,
+} from "@/lib/telemetry/investigation-selection";
 
 export type VisualPanelPayload = {
   title?: string;
@@ -41,8 +52,21 @@ export type VisualPanelPayload = {
   source?: string;
 };
 
-export function VisualResponse({ data }: { data: VisualPanelPayload }) {
+export function VisualResponse({
+  data,
+  responseId,
+  panelId,
+  selection,
+  onSelectionChange,
+}: {
+  data: VisualPanelPayload;
+  responseId?: string;
+  panelId?: string;
+  selection?: InvestigationSelection | null;
+  onSelectionChange?: (selection: InvestigationSelection | null) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const expandButtonRef = useRef<HTMLButtonElement>(null);
   const chart = safeParseChartSpec(data.spec);
   const table = safeParseTableSpec(data.table);
   const metrics = safeParseMetricSpec(data.metrics);
@@ -57,9 +81,37 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
     trace?.title ??
     "Visual answer";
   const hasVisual = Boolean(chart || table || metrics || heatmap || trace);
+  const interaction: VisualInteraction | undefined =
+    responseId && panelId && onSelectionChange
+      ? {
+          responseId,
+          panelId,
+          panelTitle: title,
+          source: data.source,
+          selection: selection ?? null,
+          onSelectionChange,
+        }
+      : undefined;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setExpanded(false);
+      requestAnimationFrame(() => expandButtonRef.current?.focus());
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => expandButtonRef.current?.focus());
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [expanded]);
 
   return (
-    <section className={`agent-visual-card${expanded ? " expanded" : ""}`}>
+    <section
+      className={`agent-visual-card${expanded ? " expanded" : ""}`}
+      role={expanded ? "dialog" : undefined}
+      aria-modal={expanded ? true : undefined}
+      aria-label={expanded ? title : undefined}
+    >
       <header>
         <div>
           <span>
@@ -69,6 +121,7 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
         </div>
         {hasVisual && (
           <button
+            ref={expandButtonRef}
             type="button"
             aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
             onClick={() => setExpanded((value) => !value)}
@@ -79,11 +132,13 @@ export function VisualResponse({ data }: { data: VisualPanelPayload }) {
       </header>
 
       <div className="agent-visual-body">
-        {chart && <ChartSpecView spec={chart} />}
-        {table && <TableExplorer spec={table} />}
-        {metrics && <MetricGrid spec={metrics} />}
-        {heatmap && <HeatmapSpecView spec={heatmap} />}
-        {trace && <TraceSpecView spec={trace} />}
+        {chart && <ChartSpecView spec={chart} interaction={interaction} />}
+        {table && <TableExplorer spec={table} interaction={interaction} />}
+        {metrics && <MetricGrid spec={metrics} interaction={interaction} />}
+        {heatmap && (
+          <HeatmapSpecView spec={heatmap} interaction={interaction} />
+        )}
+        {trace && <TraceSpecView spec={trace} interaction={interaction} />}
         {!hasVisual && (
           <div
             className={
@@ -132,11 +187,37 @@ function panelPayload(panel: VisualPanel): VisualPanelPayload {
 export function VisualResponseGroup({
   data,
   query,
+  onInvestigate,
+  disabled = false,
 }: {
   data: unknown;
   query?: string;
+  onInvestigate?: (
+    action: InvestigationAction,
+    selection: InvestigationSelection,
+    originalQuery: string,
+  ) => void;
+  disabled?: boolean;
 }) {
+  const [selection, setSelection] = useState<InvestigationSelection | null>(
+    null,
+  );
+  const firstActionRef = useRef<HTMLButtonElement>(null);
   const response = safeParseVisualResponse(data);
+  const activeSelection =
+    selection &&
+    response &&
+    selection.responseId === response.id &&
+    response.panels.some((panel) => panel.id === selection.panelId)
+      ? selection
+      : null;
+
+  useEffect(() => {
+    if (!activeSelection) return;
+    requestAnimationFrame(() =>
+      firstActionRef.current?.focus({ preventScroll: true }),
+    );
+  }, [activeSelection]);
 
   if (!response) {
     return (
@@ -148,6 +229,13 @@ export function VisualResponseGroup({
   }
 
   const reportQuery = response.query ?? query;
+  const panelStates = response.panels.map((panel) => ({
+    panel,
+    linkState: visualPanelLinkState(panel, activeSelection),
+  }));
+  const linkedViews = panelStates.filter(
+    ({ linkState }) => linkState === "linked",
+  ).length;
 
   return (
     <section className="agent-visual-response">
@@ -171,6 +259,77 @@ export function VisualResponseGroup({
         </div>
       </header>
 
+      {activeSelection && (
+        <div
+          className="visual-investigation-shelf"
+          role="region"
+          aria-label="Point-and-investigate controls"
+        >
+          <div className="visual-selection-summary" aria-live="polite">
+            <i aria-hidden="true">
+              <Focus size={17} />
+            </i>
+            <span>Canvas focus</span>
+            <strong>{selectionShortLabel(activeSelection)}</strong>
+            <small>
+              {linkedViews > 0
+                ? `${linkedViews} compatible ${linkedViews === 1 ? "view" : "views"} linked`
+                : "Focused follow-up ready"}
+            </small>
+          </div>
+          <div className="visual-investigation-actions">
+            <button
+              ref={firstActionRef}
+              type="button"
+              disabled={disabled || !onInvestigate}
+              onClick={() =>
+                onInvestigate?.(
+                  "explain",
+                  activeSelection,
+                  reportQuery ?? "",
+                )
+              }
+            >
+              <Sparkles size={14} /> Explain
+            </button>
+            <button
+              type="button"
+              disabled={disabled || !onInvestigate}
+              onClick={() =>
+                onInvestigate?.(
+                  "compare",
+                  activeSelection,
+                  reportQuery ?? "",
+                )
+              }
+            >
+              <GitCompareArrows size={14} /> Compare
+            </button>
+            <button
+              type="button"
+              disabled={disabled || !onInvestigate}
+              onClick={() =>
+                onInvestigate?.(
+                  "find_evidence",
+                  activeSelection,
+                  reportQuery ?? "",
+                )
+              }
+            >
+              <ScanSearch size={14} /> Find evidence
+            </button>
+            <button
+              type="button"
+              className="visual-selection-clear"
+              aria-label="Clear canvas selection"
+              onClick={() => setSelection(null)}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {response.status === "running" ? (
         <div className="agent-team-progress" role="status">
           {response.specialists.map((specialist, index) => (
@@ -183,12 +342,18 @@ export function VisualResponseGroup({
         </div>
       ) : response.panels.length > 0 ? (
         <div className="agent-response-grid">
-          {response.panels.map((panel) => (
+          {panelStates.map(({ panel, linkState }) => (
             <div
-              className={`agent-response-panel level-${panel.level} span-${panel.span}`}
+              className={`agent-response-panel level-${panel.level} span-${panel.span} selection-${linkState}`}
               key={panel.id}
             >
-              <VisualResponse data={panelPayload(panel)} />
+              <VisualResponse
+                data={panelPayload(panel)}
+                responseId={response.id}
+                panelId={panel.id}
+                selection={activeSelection}
+                onSelectionChange={setSelection}
+              />
             </div>
           ))}
         </div>

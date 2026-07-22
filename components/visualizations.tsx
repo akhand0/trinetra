@@ -1,6 +1,8 @@
 "use client";
 
+import { Focus } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type {
   ChartSpec,
   HeatmapSpec,
@@ -9,6 +11,11 @@ import type {
   TraceSpec,
 } from "@/lib/telemetry/chart-spec";
 import { effectiveChartSeriesField } from "@/lib/telemetry/chart-spec";
+import {
+  createInvestigationSelection,
+  selectionRelation,
+  type InvestigationSelection,
+} from "@/lib/telemetry/investigation-selection";
 import type {
   HeatCell,
   Posterior,
@@ -24,6 +31,50 @@ function linePath(points: Array<{ x: number; y: number }>) {
 
 const SERIES_COLORS = ["#ff8a3d", "#70d9ff", "#9588ff", "#5fd48b", "#ff5c6c"];
 
+export type VisualInteraction = {
+  responseId: string;
+  panelId: string;
+  panelTitle: string;
+  source?: string;
+  selection: InvestigationSelection | null;
+  onSelectionChange: (selection: InvestigationSelection | null) => void;
+};
+
+function activateVisualSelection(
+  candidate: InvestigationSelection,
+  interaction?: VisualInteraction,
+) {
+  if (!interaction) return;
+  interaction.onSelectionChange(
+    selectionRelation(interaction.selection, candidate) === "selected"
+      ? null
+      : candidate,
+  );
+}
+
+function selectionKeyDown(
+  event: ReactKeyboardEvent,
+  candidate: InvestigationSelection,
+  interaction?: VisualInteraction,
+) {
+  if (!interaction) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    activateVisualSelection(candidate, interaction);
+  } else if (event.key === "Escape") {
+    interaction.onSelectionChange(null);
+  }
+}
+
+function relationClass(
+  candidate: InvestigationSelection,
+  interaction?: VisualInteraction,
+) {
+  return interaction
+    ? ` relation-${selectionRelation(interaction.selection, candidate)}`
+    : "";
+}
+
 /**
  * Generic renderer for an agent-composed {@link ChartSpec}. Draws line / area /
  * bar / scatter marks over a flat data table, with an optional series channel
@@ -33,9 +84,11 @@ const SERIES_COLORS = ["#ff8a3d", "#70d9ff", "#9588ff", "#5fd48b", "#ff5c6c"];
 export function ChartSpecView({
   spec,
   compact = false,
+  interaction,
 }: {
   spec: ChartSpec;
   compact?: boolean;
+  interaction?: VisualInteraction;
 }) {
   const width = 620;
   const height = compact ? 150 : 200;
@@ -54,6 +107,7 @@ export function ChartSpecView({
     ? Array.from(new Set(spec.data.map((row) => String(row[seriesField] ?? ""))))
     : ["__single"];
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [activeMarkId, setActiveMarkId] = useState<string | null>(null);
   const [hovered, setHovered] = useState<{
     label: string;
     value: number;
@@ -70,6 +124,12 @@ export function ChartSpecView({
       else if (current.size < seriesKeys.length - 1) next.add(key);
       return next;
     });
+    const selectedSeries = interaction?.selection?.facets.find(
+      (facet) => facet.field === seriesField,
+    );
+    if (selectedSeries && String(selectedSeries.value) === key) {
+      interaction?.onSelectionChange(null);
+    }
     setHovered(null);
   }
 
@@ -97,6 +157,47 @@ export function ChartSpecView({
     seriesField
       ? spec.data.filter((row) => String(row[seriesField] ?? "") === key)
       : spec.data;
+  const visibleMarkIds = visibleSeries.flatMap((key) =>
+    rowsFor(key).map((row) => `row-${spec.data.indexOf(row)}`),
+  );
+  const rovingMarkId =
+    activeMarkId && visibleMarkIds.includes(activeMarkId)
+      ? activeMarkId
+      : visibleMarkIds[0];
+
+  function chartMarkKeyDown(
+    event: ReactKeyboardEvent<SVGElement>,
+    candidate: InvestigationSelection,
+  ) {
+    const direction =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (direction || event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const current = visibleMarkIds.indexOf(candidate.markId);
+      const next =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? visibleMarkIds.length - 1
+            : (current + direction + visibleMarkIds.length) %
+              visibleMarkIds.length;
+      const nextId = visibleMarkIds[next];
+      const svg = event.currentTarget.ownerSVGElement;
+      setActiveMarkId(nextId);
+      requestAnimationFrame(() => {
+        const nextMark = svg?.querySelector<SVGElement>(
+          `[data-mark-id="${nextId}"]`,
+        );
+        (nextMark as (SVGElement & { focus: () => void }) | null)?.focus();
+      });
+      return;
+    }
+    selectionKeyDown(event, candidate, interaction);
+  }
 
   const baseline = pad.top + plotH;
   const barSlot = plotW / Math.max(categories.length, 1);
@@ -130,7 +231,7 @@ export function ChartSpecView({
       <svg
         className="chart-svg"
         viewBox={`0 0 ${width} ${height}`}
-        role="img"
+        role={interaction ? "group" : "img"}
         aria-label={spec.title ?? `${spec.mark} chart`}
         onMouseLeave={() => setHovered(null)}
       >
@@ -157,12 +258,40 @@ export function ChartSpecView({
         const seriesIndex = seriesKeys.indexOf(key);
         const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
         const rows = rowsFor(key);
-        const points = rows.map((row) => ({
-          x: xOf(String(row[xField] ?? "")),
-          y: yOf(num(row[yField])),
-          raw: num(row[yField]),
-          label: String(row[xField] ?? ""),
-        }));
+        const points = rows.map((row) => {
+          const label = String(row[xField] ?? "");
+          const raw = num(row[yField]);
+          const sourceIndex = spec.data.indexOf(row);
+          const candidate = interaction
+            ? createInvestigationSelection({
+                responseId: interaction.responseId,
+                panelId: interaction.panelId,
+                panelTitle: interaction.panelTitle,
+                visualKind: "chart",
+                markId: `row-${sourceIndex}`,
+                label: `${spec.x.label ?? xField}: ${label} · ${spec.y.label ?? yField}: ${raw}`,
+                datum: row,
+                dimensionFields: [
+                  xField,
+                  ...(seriesField ? [seriesField] : []),
+                ],
+                measureFields: [yField],
+                labels: {
+                  [xField]: spec.x.label,
+                  [yField]: spec.y.label,
+                },
+                source: interaction.source,
+              })
+            : null;
+          return {
+            x: xOf(label),
+            y: yOf(raw),
+            raw,
+            label,
+            sourceIndex,
+            candidate,
+          };
+        });
 
         if (spec.mark === "bar") {
           return (
@@ -170,9 +299,17 @@ export function ChartSpecView({
               {points.map((point, index) => {
                 const offset =
                   seriesIndex * barWidth - (seriesKeys.length * barWidth) / 2;
+                const relation = point.candidate
+                  ? selectionRelation(interaction?.selection, point.candidate)
+                  : "default";
                 return (
                   <rect
                     key={index}
+                    className={
+                      point.candidate
+                        ? `visual-selectable-mark${relationClass(point.candidate, interaction)}`
+                        : undefined
+                    }
                     x={point.x + offset}
                     y={point.y}
                     width={barWidth}
@@ -180,6 +317,30 @@ export function ChartSpecView({
                     fill={color}
                     opacity="0.85"
                     rx="1.5"
+                    role={point.candidate ? "button" : undefined}
+                    data-mark-id={point.candidate?.markId}
+                    tabIndex={
+                      point.candidate
+                        ? point.candidate.markId === rovingMarkId
+                          ? 0
+                          : -1
+                        : undefined
+                    }
+                    aria-label={
+                      point.candidate
+                        ? `${point.candidate.label} · point ${visibleMarkIds.indexOf(point.candidate.markId) + 1} of ${visibleMarkIds.length}`
+                        : undefined
+                    }
+                    aria-pressed={
+                      point.candidate ? relation === "selected" : undefined
+                    }
+                    onClick={() =>
+                      point.candidate &&
+                      activateVisualSelection(point.candidate, interaction)
+                    }
+                    onKeyDown={(event) =>
+                      point.candidate && chartMarkKeyDown(event, point.candidate)
+                    }
                     onMouseEnter={() =>
                       setHovered({
                         label: point.label,
@@ -189,6 +350,16 @@ export function ChartSpecView({
                         y: point.y,
                       })
                     }
+                    onFocus={() => {
+                      if (point.candidate) setActiveMarkId(point.candidate.markId);
+                      setHovered({
+                        label: point.label,
+                        value: point.raw,
+                        series: key,
+                        x: point.x,
+                        y: point.y,
+                      });
+                    }}
                   />
                 );
               })}
@@ -199,25 +370,69 @@ export function ChartSpecView({
         if (spec.mark === "scatter") {
           return (
             <g key={key}>
-              {points.map((point, index) => (
-                <circle
-                  key={index}
-                  cx={point.x}
-                  cy={point.y}
-                  r="3.5"
-                  fill={color}
-                  opacity="0.9"
-                  onMouseEnter={() =>
-                    setHovered({
-                      label: point.label,
-                      value: point.raw,
-                      series: key,
-                      x: point.x,
-                      y: point.y,
-                    })
-                  }
-                />
-              ))}
+              {points.map((point, index) => {
+                const relation = point.candidate
+                  ? selectionRelation(interaction?.selection, point.candidate)
+                  : "default";
+                return (
+                  <circle
+                    key={index}
+                    className={
+                      point.candidate
+                        ? `visual-selectable-mark${relationClass(point.candidate, interaction)}`
+                        : undefined
+                    }
+                    cx={point.x}
+                    cy={point.y}
+                    r="4.5"
+                    fill={color}
+                    opacity="0.9"
+                    role={point.candidate ? "button" : undefined}
+                    data-mark-id={point.candidate?.markId}
+                    tabIndex={
+                      point.candidate
+                        ? point.candidate.markId === rovingMarkId
+                          ? 0
+                          : -1
+                        : undefined
+                    }
+                    aria-label={
+                      point.candidate
+                        ? `${point.candidate.label} · point ${visibleMarkIds.indexOf(point.candidate.markId) + 1} of ${visibleMarkIds.length}`
+                        : undefined
+                    }
+                    aria-pressed={
+                      point.candidate ? relation === "selected" : undefined
+                    }
+                    onClick={() =>
+                      point.candidate &&
+                      activateVisualSelection(point.candidate, interaction)
+                    }
+                    onKeyDown={(event) =>
+                      point.candidate && chartMarkKeyDown(event, point.candidate)
+                    }
+                    onMouseEnter={() =>
+                      setHovered({
+                        label: point.label,
+                        value: point.raw,
+                        series: key,
+                        x: point.x,
+                        y: point.y,
+                      })
+                    }
+                    onFocus={() => {
+                      if (point.candidate) setActiveMarkId(point.candidate.markId);
+                      setHovered({
+                        label: point.label,
+                        value: point.raw,
+                        series: key,
+                        x: point.x,
+                        y: point.y,
+                      });
+                    }}
+                  />
+                );
+              })}
             </g>
           );
         }
@@ -239,26 +454,70 @@ export function ChartSpecView({
               stroke={color}
               strokeWidth="2.4"
             />
-            {points.map((point, index) => (
-              <circle
-                key={index}
-                cx={point.x}
-                cy={point.y}
-                r="3"
-                fill={color}
-                stroke="#151922"
-                strokeWidth="1.5"
-                onMouseEnter={() =>
-                  setHovered({
-                    label: point.label,
-                    value: point.raw,
-                    series: key,
-                    x: point.x,
-                    y: point.y,
-                  })
-                }
-              />
-            ))}
+            {points.map((point, index) => {
+              const relation = point.candidate
+                ? selectionRelation(interaction?.selection, point.candidate)
+                : "default";
+              return (
+                <circle
+                  key={index}
+                  className={
+                    point.candidate
+                      ? `visual-selectable-mark${relationClass(point.candidate, interaction)}`
+                      : undefined
+                  }
+                  cx={point.x}
+                  cy={point.y}
+                  r="4"
+                  fill={color}
+                  stroke="#151922"
+                  strokeWidth="1.5"
+                  role={point.candidate ? "button" : undefined}
+                  data-mark-id={point.candidate?.markId}
+                  tabIndex={
+                    point.candidate
+                      ? point.candidate.markId === rovingMarkId
+                        ? 0
+                        : -1
+                      : undefined
+                  }
+                  aria-label={
+                    point.candidate
+                      ? `${point.candidate.label} · point ${visibleMarkIds.indexOf(point.candidate.markId) + 1} of ${visibleMarkIds.length}`
+                      : undefined
+                  }
+                  aria-pressed={
+                    point.candidate ? relation === "selected" : undefined
+                  }
+                  onClick={() =>
+                    point.candidate &&
+                    activateVisualSelection(point.candidate, interaction)
+                  }
+                  onKeyDown={(event) =>
+                    point.candidate && chartMarkKeyDown(event, point.candidate)
+                  }
+                  onMouseEnter={() =>
+                    setHovered({
+                      label: point.label,
+                      value: point.raw,
+                      series: key,
+                      x: point.x,
+                      y: point.y,
+                    })
+                  }
+                  onFocus={() => {
+                    if (point.candidate) setActiveMarkId(point.candidate.markId);
+                    setHovered({
+                      label: point.label,
+                      value: point.raw,
+                      series: key,
+                      x: point.x,
+                      y: point.y,
+                    });
+                  }}
+                />
+              );
+            })}
           </g>
         );
       })}
@@ -321,26 +580,39 @@ function compareVisualCells(
   });
 }
 
-export function TableExplorer({ spec }: { spec: TableSpec }) {
+export function TableExplorer({
+  spec,
+  interaction,
+}: {
+  spec: TableSpec;
+  interaction?: VisualInteraction;
+}) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState(spec.defaultSort);
   const [visibleRows, setVisibleRows] = useState(12);
 
   const rows = useMemo(() => {
+    const indexedRows = spec.rows.map((row, sourceIndex) => ({
+      row,
+      sourceIndex,
+    }));
     const normalizedQuery = query.trim().toLowerCase();
     const filtered = normalizedQuery
-      ? spec.rows.filter((row) =>
+      ? indexedRows.filter(({ row }) =>
           spec.columns.some((column) =>
             String(row[column.key] ?? "")
               .toLowerCase()
               .includes(normalizedQuery),
           ),
         )
-      : spec.rows;
+      : indexedRows;
 
     if (!sort) return filtered;
     return [...filtered].sort((left, right) => {
-      const comparison = compareVisualCells(left[sort.key], right[sort.key]);
+      const comparison = compareVisualCells(
+        left.row[sort.key],
+        right.row[sort.key],
+      );
       return sort.direction === "asc" ? comparison : -comparison;
     });
   }, [query, sort, spec.columns, spec.rows]);
@@ -376,8 +648,23 @@ export function TableExplorer({ spec }: { spec: TableSpec }) {
         <table>
           <thead>
             <tr>
+              {interaction && (
+                <th className="visual-row-action-heading" scope="col">
+                  <span className="sr-only">Investigate row</span>
+                </th>
+              )}
               {spec.columns.map((column) => (
-                <th key={column.key}>
+                <th
+                  key={column.key}
+                  scope="col"
+                  aria-sort={
+                    sort?.key === column.key
+                      ? sort.direction === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
                   <button type="button" onClick={() => toggleSort(column.key)}>
                     {column.label}
                     <span aria-hidden="true">
@@ -393,13 +680,70 @@ export function TableExplorer({ spec }: { spec: TableSpec }) {
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, visibleRows).map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {spec.columns.map((column) => (
-                  <td key={column.key}>{String(row[column.key] ?? "—")}</td>
-                ))}
-              </tr>
-            ))}
+            {rows.slice(0, visibleRows).map(({ row, sourceIndex }) => {
+              const labels = Object.fromEntries(
+                spec.columns.map((column) => [column.key, column.label]),
+              );
+              const candidate = interaction
+                ? createInvestigationSelection({
+                    responseId: interaction.responseId,
+                    panelId: interaction.panelId,
+                    panelTitle: interaction.panelTitle,
+                    visualKind: "table",
+                    markId: `row-${sourceIndex}`,
+                    label: spec.columns
+                      .slice(0, 3)
+                      .map(
+                        (column) =>
+                          `${column.label}: ${String(row[column.key] ?? "—")}`,
+                      )
+                      .join(" · "),
+                    datum: row,
+                    labels,
+                    source: interaction.source,
+                  })
+                : null;
+              const relation = candidate
+                ? selectionRelation(interaction?.selection, candidate)
+                : "default";
+              return (
+                <tr
+                  key={sourceIndex}
+                  className={
+                    candidate
+                      ? `visual-selectable-row${relationClass(candidate, interaction)}`
+                      : undefined
+                  }
+                >
+                  {interaction && (
+                    <td className="visual-row-action-cell">
+                      {candidate && (
+                        <button
+                          type="button"
+                          aria-label={`Investigate ${candidate.label}`}
+                          aria-pressed={relation === "selected"}
+                          onClick={() =>
+                            activateVisualSelection(candidate, interaction)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                              interaction.onSelectionChange(null);
+                            }
+                          }}
+                        >
+                          <Focus size={13} aria-hidden="true" />
+                        </button>
+                      )}
+                    </td>
+                  )}
+                  {spec.columns.map((column) => (
+                    <td key={column.key}>
+                      {String(row[column.key] ?? "—")}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -451,15 +795,53 @@ function metricValueKind(label: string, value: string) {
   return "text";
 }
 
-export function MetricGrid({ spec }: { spec: MetricSpec }) {
+export function MetricGrid({
+  spec,
+  interaction,
+}: {
+  spec: MetricSpec;
+  interaction?: VisualInteraction;
+}) {
   return (
     <div className="visual-metric-grid">
-      {spec.items.map((item) => {
+      {spec.items.map((item, index) => {
         const value = item.value.trim();
         const kind = metricValueKind(item.label, value);
+        const candidate = interaction
+          ? createInvestigationSelection({
+              responseId: interaction.responseId,
+              panelId: interaction.panelId,
+              panelTitle: interaction.panelTitle,
+              visualKind: "metrics",
+              markId: `metric-${index}`,
+              label: `${item.label}: ${item.value}`,
+              datum: {
+                [item.label]: item.value,
+              },
+              dimensionFields: [item.label],
+              source: interaction.source,
+            })
+          : null;
+        const relation = candidate
+          ? selectionRelation(interaction?.selection, candidate)
+          : "default";
 
         return (
-          <article className={`tone-${item.tone}`} key={item.label}>
+          <article
+            className={`tone-${item.tone}${
+              candidate ? relationClass(candidate, interaction) : ""
+            }`}
+            key={`${item.label}-${index}`}
+            role={candidate ? "button" : undefined}
+            tabIndex={candidate ? 0 : undefined}
+            aria-pressed={candidate ? relation === "selected" : undefined}
+            onClick={() =>
+              candidate && activateVisualSelection(candidate, interaction)
+            }
+            onKeyDown={(event) =>
+              candidate && selectionKeyDown(event, candidate, interaction)
+            }
+          >
             <span>{item.label}</span>
             <strong className={`value-${kind}`} title={item.value}>
               {item.value}
@@ -481,7 +863,13 @@ function formatVisualNumber(value: number) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export function HeatmapSpecView({ spec }: { spec: HeatmapSpec }) {
+export function HeatmapSpecView({
+  spec,
+  interaction,
+}: {
+  spec: HeatmapSpec;
+  interaction?: VisualInteraction;
+}) {
   const rows = Array.from(new Set(spec.cells.map((cell) => cell.row)));
   const columns = Array.from(new Set(spec.cells.map((cell) => cell.column)));
   const values = spec.cells.map((cell) => cell.value);
@@ -491,7 +879,16 @@ export function HeatmapSpecView({ spec }: { spec: HeatmapSpec }) {
   const peak = spec.cells.reduce((best, cell) =>
     cell.value > best.value ? cell : best,
   );
-  const [selected, setSelected] = useState(peak);
+  const [localSelected, setLocalSelected] = useState(peak);
+  const externallySelected =
+    interaction && interaction.selection?.panelId === interaction.panelId
+      ? spec.cells.find(
+          (cell) =>
+            cell.row === interaction.selection?.raw.row &&
+            cell.column === interaction.selection?.raw.column,
+        )
+      : undefined;
+  const selected = externallySelected ?? localSelected;
 
   return (
     <div className="visual-heatmap-spec">
@@ -500,7 +897,7 @@ export function HeatmapSpecView({ spec }: { spec: HeatmapSpec }) {
         style={{
           gridTemplateColumns: `minmax(84px, auto) repeat(${columns.length}, minmax(34px, 1fr))`,
         }}
-        role="grid"
+        role="group"
         aria-label={spec.title}
       >
         <span aria-hidden="true" />
@@ -517,20 +914,81 @@ export function HeatmapSpecView({ spec }: { spec: HeatmapSpec }) {
                 (candidate) =>
                   candidate.row === row && candidate.column === column,
               );
-              const value = cell?.value ?? 0;
+              if (!cell) {
+                return (
+                  <button
+                    type="button"
+                    className="is-missing"
+                    key={`${row}-${column}`}
+                    aria-label={`${row}, ${column}: no data`}
+                    disabled
+                  >
+                    <span>—</span>
+                  </button>
+                );
+              }
+              const value = cell.value;
               const intensity = Math.max(0, Math.min(1, (value - min) / range));
-              const isSelected =
-                selected.row === row && selected.column === column;
+              const sourceIndex = spec.cells.indexOf(cell);
+              const candidate = interaction
+                ? createInvestigationSelection({
+                    responseId: interaction.responseId,
+                    panelId: interaction.panelId,
+                    panelTitle: interaction.panelTitle,
+                    visualKind: "heatmap",
+                    markId: `cell-${sourceIndex}`,
+                    label: `${spec.rowLabel ?? "Row"}: ${row} · ${spec.columnLabel ?? "Column"}: ${column} · ${spec.valueLabel ?? "Value"}: ${value}`,
+                    datum: {
+                      row,
+                      column,
+                      value,
+                      [spec.rowLabel ?? "row_dimension"]: row,
+                      [spec.columnLabel ?? "column_dimension"]: column,
+                    },
+                    dimensionFields: [
+                      "row",
+                      "column",
+                      spec.rowLabel ?? "row_dimension",
+                      spec.columnLabel ?? "column_dimension",
+                    ],
+                    measureFields: ["value"],
+                    labels: {
+                      row: spec.rowLabel,
+                      column: spec.columnLabel,
+                      value: spec.valueLabel,
+                    },
+                    source: interaction.source,
+                  })
+                : null;
+              const relation = candidate
+                ? selectionRelation(interaction?.selection, candidate)
+                : selected.row === row && selected.column === column
+                  ? "selected"
+                  : "default";
               return (
                 <button
                   type="button"
-                  className={isSelected ? "is-selected" : ""}
+                  className={
+                    candidate
+                      ? relationClass(candidate, interaction).trim()
+                      : relation === "selected"
+                        ? "is-selected"
+                        : ""
+                  }
                   key={`${row}-${column}`}
                   aria-label={`${row}, ${column}: ${formatVisualNumber(value)} ${spec.valueLabel ?? ""}`.trim()}
-                  aria-pressed={isSelected}
-                  onClick={() =>
-                    setSelected(cell ?? { row, column, value: 0 })
-                  }
+                  aria-pressed={relation === "selected"}
+                  onClick={() => {
+                    setLocalSelected(cell);
+                    if (candidate) {
+                      activateVisualSelection(candidate, interaction);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      interaction?.onSelectionChange(null);
+                    }
+                  }}
                   style={{
                     background: `color-mix(in srgb, var(--violet) ${Math.round(10 + intensity * 78)}%, transparent)`,
                   }}
@@ -553,13 +1011,25 @@ export function HeatmapSpecView({ spec }: { spec: HeatmapSpec }) {
   );
 }
 
-export function TraceSpecView({ spec }: { spec: TraceSpec }) {
+export function TraceSpecView({
+  spec,
+  interaction,
+}: {
+  spec: TraceSpec;
+  interaction?: VisualInteraction;
+}) {
   const slowest = spec.spans.reduce((best, span) =>
     span.durationMs > best.durationMs ? span : best,
   );
   const [selectedId, setSelectedId] = useState(slowest.id);
+  const externallySelectedId =
+    interaction && interaction.selection?.panelId === interaction.panelId
+      ? String(interaction.selection.raw.span_id ?? "")
+      : "";
   const selected =
-    spec.spans.find((span) => span.id === selectedId) ?? slowest;
+    spec.spans.find((span) => span.id === externallySelectedId) ??
+    spec.spans.find((span) => span.id === selectedId) ??
+    slowest;
 
   return (
     <div className="visual-trace-spec">
@@ -568,7 +1038,7 @@ export function TraceSpecView({ spec }: { spec: TraceSpec }) {
         <span>{formatVisualNumber(spec.totalDurationMs / 2)} ms</span>
         <span>{formatVisualNumber(spec.totalDurationMs)} ms</span>
       </div>
-      <div aria-label={spec.title}>
+      <div role="group" aria-label={spec.title}>
         {spec.spans.map((span) => {
           const left = Math.min(
             100,
@@ -578,13 +1048,62 @@ export function TraceSpecView({ spec }: { spec: TraceSpec }) {
             100 - left,
             Math.max(1.25, (span.durationMs / spec.totalDurationMs) * 100),
           );
+          const candidate = interaction
+            ? createInvestigationSelection({
+                responseId: interaction.responseId,
+                panelId: interaction.panelId,
+                panelTitle: interaction.panelTitle,
+                visualKind: "trace",
+                markId: `span-${span.id}`,
+                label: `${span.service} · ${span.operation} · ${formatVisualNumber(span.durationMs)} ms`,
+                datum: {
+                  trace_id: spec.traceId ?? null,
+                  span_id: span.id,
+                  parent_span_id: span.parentId ?? null,
+                  service: span.service,
+                  operation: span.operation,
+                  start_ms: span.startMs,
+                  duration_ms: span.durationMs,
+                  status: span.status,
+                },
+                dimensionFields: [
+                  "trace_id",
+                  "span_id",
+                  "parent_span_id",
+                  "service",
+                  "operation",
+                  "status",
+                ],
+                measureFields: ["start_ms", "duration_ms"],
+                source: interaction.source,
+              })
+            : null;
+          const relation = candidate
+            ? selectionRelation(interaction?.selection, candidate)
+            : selectedId === span.id
+              ? "selected"
+              : "default";
           return (
             <button
               type="button"
-              className={`visual-trace-row${selectedId === span.id ? " is-selected" : ""}`}
+              className={`visual-trace-row${
+                candidate
+                  ? relationClass(candidate, interaction)
+                  : relation === "selected"
+                    ? " is-selected"
+                    : ""
+              }`}
               key={span.id}
-              aria-pressed={selectedId === span.id}
-              onClick={() => setSelectedId(span.id)}
+              aria-pressed={relation === "selected"}
+              onClick={() => {
+                setSelectedId(span.id);
+                if (candidate) activateVisualSelection(candidate, interaction);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  interaction?.onSelectionChange(null);
+                }
+              }}
             >
               <span className="visual-trace-label">
                 <strong>{span.service}</strong>
