@@ -23,16 +23,23 @@ function LiveReportStatus({ handle }: { handle: ReportHandle }) {
   );
   const latest = parts.at(-1);
   const done = latest?.step === "done";
+  const failed = done && latest.emailed === false;
 
   return (
     <div
-      className={`visual-report-status${done ? " complete" : ""}`}
+      className={`visual-report-status${
+        failed ? " failed" : done ? " complete" : ""
+      }`}
       role="status"
       aria-live="polite"
     >
       {error ? (
         <>
           <X size={13} /> Stream disconnected
+        </>
+      ) : failed ? (
+        <>
+          <X size={13} /> {latest.message}
         </>
       ) : done ? (
         <>
@@ -58,6 +65,11 @@ export function VisualReportControl({ query }: { query: string }) {
   async function launchReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (launching) return;
+    const recipient = email.trim();
+    if (!recipient) {
+      setError("Enter the email address that should receive the PDF.");
+      return;
+    }
 
     setLaunching(true);
     setHandle(null);
@@ -66,7 +78,7 @@ export function VisualReportControl({ query }: { query: string }) {
     try {
       const nextHandle = await startVisualReport({
         query,
-        email: email.trim() || undefined,
+        email: recipient,
       });
       setHandle(nextHandle);
     } catch (cause) {
@@ -85,7 +97,7 @@ export function VisualReportControl({ query }: { query: string }) {
         type="button"
         onClick={() => setOpen(true)}
       >
-        <Mail size={13} /> Live report
+        <Mail size={13} /> Email PDF
       </button>
     );
   }
@@ -97,9 +109,14 @@ export function VisualReportControl({ query }: { query: string }) {
         <input
           aria-label="Report delivery email"
           type="email"
-          placeholder="Email (optional)"
+          placeholder="Recipient email"
+          autoComplete="email"
+          required
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            if (error) setError(null);
+          }}
         />
         <button type="submit" disabled={launching}>
           {launching ? (
@@ -107,7 +124,7 @@ export function VisualReportControl({ query }: { query: string }) {
           ) : (
             <Play size={12} fill="currentColor" />
           )}
-          Run
+          {launching ? "Sending" : "Send PDF"}
         </button>
         <button
           className="visual-report-close"

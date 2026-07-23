@@ -34,6 +34,7 @@ import {
   type VisualPanel,
 } from "@/lib/telemetry/visual-response";
 import { VisualReportControl } from "@/components/visual-report-control";
+import { VisualShareControl } from "@/components/visual-share-control";
 import {
   selectionShortLabel,
   visualPanelLinkState,
@@ -194,6 +195,7 @@ export function VisualResponseGroup({
   speaking = false,
   speechSupported = false,
   onToggleSpeech,
+  mode = "chat",
 }: {
   data: unknown;
   query?: string;
@@ -206,6 +208,7 @@ export function VisualResponseGroup({
   speaking?: boolean;
   speechSupported?: boolean;
   onToggleSpeech?: () => void;
+  mode?: "chat" | "shared";
 }) {
   const [selection, setSelection] = useState<InvestigationSelection | null>(
     null,
@@ -221,11 +224,11 @@ export function VisualResponseGroup({
       : null;
 
   useEffect(() => {
-    if (!activeSelection) return;
+    if (!activeSelection || mode !== "chat" || !onInvestigate) return;
     requestAnimationFrame(() =>
       firstActionRef.current?.focus({ preventScroll: true }),
     );
-  }, [activeSelection]);
+  }, [activeSelection, mode, onInvestigate]);
 
   if (!response) {
     return (
@@ -237,6 +240,10 @@ export function VisualResponseGroup({
   }
 
   const reportQuery = response.query ?? query;
+  const sharedResponse =
+    reportQuery && !response.query
+      ? { ...response, query: reportQuery }
+      : response;
   const panelStates = response.panels.map((panel) => ({
     panel,
     linkState: visualPanelLinkState(panel, activeSelection),
@@ -261,29 +268,37 @@ export function VisualResponseGroup({
               <span key={specialist}>{specialist}</span>
             ))}
           </div>
-          {response.status === "complete" && onToggleSpeech && (
-            <button
-              type="button"
-              className={`agent-speak-findings${speaking ? " speaking" : ""}`}
-              aria-label={
-                speaking ? "Stop speaking findings" : "Speak findings aloud"
-              }
-              aria-pressed={speaking}
-              disabled={!speechSupported}
-              title={
-                speechSupported
-                  ? undefined
-                  : "Spoken findings are unavailable in this browser"
-              }
-              onClick={onToggleSpeech}
-            >
-              {speaking ? (
-                <Square size={13} fill="currentColor" />
-              ) : (
-                <Volume2 size={14} />
+          {response.status === "complete" && mode === "chat" && (
+            <div className="agent-response-action-row">
+              {onToggleSpeech && (
+                <button
+                  type="button"
+                  className={`agent-speak-findings${speaking ? " speaking" : ""}`}
+                  aria-label={
+                    speaking
+                      ? "Stop speaking findings"
+                      : "Speak findings aloud"
+                  }
+                  aria-pressed={speaking}
+                  disabled={!speechSupported}
+                  title={
+                    speechSupported
+                      ? undefined
+                      : "Spoken findings are unavailable in this browser"
+                  }
+                  onClick={onToggleSpeech}
+                >
+                  {speaking ? (
+                    <Square size={13} fill="currentColor" />
+                  ) : (
+                    <Volume2 size={14} />
+                  )}
+                  <span>{speaking ? "Stop speaking" : "Speak findings"}</span>
+                </button>
               )}
-              <span>{speaking ? "Stop speaking" : "Speak findings"}</span>
-            </button>
+              <VisualShareControl response={sharedResponse} />
+              {reportQuery && <VisualReportControl query={reportQuery} />}
+            </div>
           )}
           {onToggleSpeech && (
             <span
@@ -295,15 +310,14 @@ export function VisualResponseGroup({
               {speaking ? "Reading investigation findings aloud." : ""}
             </span>
           )}
-          {response.status === "complete" && reportQuery && (
-            <VisualReportControl query={reportQuery} />
-          )}
         </div>
       </header>
 
       {activeSelection && (
         <div
-          className="visual-investigation-shelf"
+          className={`visual-investigation-shelf${
+            mode === "shared" ? " read-only" : ""
+          }`}
           role="region"
           aria-label="Point-and-investigate controls"
         >
@@ -316,50 +330,56 @@ export function VisualResponseGroup({
             <small>
               {linkedViews > 0
                 ? `${linkedViews} compatible ${linkedViews === 1 ? "view" : "views"} linked`
-                : "Focused follow-up ready"}
+                : mode === "shared"
+                  ? "Explore this shared snapshot"
+                  : "Focused follow-up ready"}
             </small>
           </div>
           <div className="visual-investigation-actions">
-            <button
-              ref={firstActionRef}
-              type="button"
-              disabled={disabled || !onInvestigate}
-              onClick={() =>
-                onInvestigate?.(
-                  "explain",
-                  activeSelection,
-                  reportQuery ?? "",
-                )
-              }
-            >
-              <Sparkles size={14} /> Explain
-            </button>
-            <button
-              type="button"
-              disabled={disabled || !onInvestigate}
-              onClick={() =>
-                onInvestigate?.(
-                  "compare",
-                  activeSelection,
-                  reportQuery ?? "",
-                )
-              }
-            >
-              <GitCompareArrows size={14} /> Compare
-            </button>
-            <button
-              type="button"
-              disabled={disabled || !onInvestigate}
-              onClick={() =>
-                onInvestigate?.(
-                  "find_evidence",
-                  activeSelection,
-                  reportQuery ?? "",
-                )
-              }
-            >
-              <ScanSearch size={14} /> Find evidence
-            </button>
+            {mode === "chat" && onInvestigate && (
+              <>
+                <button
+                  ref={firstActionRef}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    onInvestigate(
+                      "explain",
+                      activeSelection,
+                      reportQuery ?? "",
+                    )
+                  }
+                >
+                  <Sparkles size={14} /> Explain
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    onInvestigate(
+                      "compare",
+                      activeSelection,
+                      reportQuery ?? "",
+                    )
+                  }
+                >
+                  <GitCompareArrows size={14} /> Compare
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    onInvestigate(
+                      "find_evidence",
+                      activeSelection,
+                      reportQuery ?? "",
+                    )
+                  }
+                >
+                  <ScanSearch size={14} /> Find evidence
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="visual-selection-clear"
