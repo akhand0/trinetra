@@ -25,7 +25,9 @@ import {
   type InvestigationSelection,
 } from "@/lib/telemetry/investigation-selection";
 import { spokenFindingsFromParts } from "@/lib/telemetry/spoken-findings";
+import type { DetectionSnapshot } from "@/lib/telemetry/detectors";
 import type { trinetraAgent } from "@/trigger/agent";
+import { DetectionOverview } from "@/components/detection-overview";
 
 function normalizeAgentMarkdown(text: string) {
   return text.replace(
@@ -102,7 +104,11 @@ function voiceErrorMessage(error: string) {
   return "Voice input stopped. Please try again.";
 }
 
-export function AgentHome() {
+export function AgentHome({
+  initialDetection,
+}: {
+  initialDetection: DetectionSnapshot;
+}) {
   const [message, setMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
@@ -251,8 +257,8 @@ export function AgentHome() {
     };
   }, [stopSpeaking]);
 
-  function startTesting() {
-    const prompt = message.trim();
+  function submitPrompt(input: string) {
+    const prompt = input.trim();
     if (!prompt || isRunning) return;
     if (recognitionRef.current) {
       voiceCanceledRef.current = true;
@@ -265,6 +271,10 @@ export function AgentHome() {
     stopSpeaking();
     setMessage("");
     void sendMessage({ text: prompt });
+  }
+
+  function startTesting() {
+    submitPrompt(message);
   }
 
   function investigateSelection(
@@ -397,7 +407,11 @@ export function AgentHome() {
         <MoreVertical size={24} strokeWidth={2.5} />
       </button>
 
-      <section className={`agent-start${hasMessages ? " has-thread" : ""}`}>
+      <section
+        className={`agent-start${
+          hasMessages ? " has-thread" : " has-detection"
+        }`}
+      >
         <h1>
           {!hasMessages && <span>Welcome to</span>}
           <span className="agent-name">
@@ -509,13 +523,21 @@ export function AgentHome() {
           </div>
         )}
 
+        {!hasMessages && (
+          <DetectionOverview
+            initialSnapshot={initialDetection}
+            disabled={isRunning}
+            onInvestigate={submitPrompt}
+          />
+        )}
+
         <form
           className="agent-composer"
           aria-label="Message composer"
           onSubmit={handleSubmit}
         >
           <textarea
-            autoFocus
+            autoFocus={hasMessages}
             aria-label="Message to trinetra"
             placeholder="Type a message..."
             value={message}

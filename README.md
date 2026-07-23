@@ -2,7 +2,9 @@
 
 **The third eye for your telemetry.**
 
-Trinetra is an incident-investigation chat agent that answers with a living visual canvas - and learns which visuals answer you best while it is answering.
+Trinetra is an always-on telemetry investigation platform. It detects incidents
+from ClickHouse before anyone asks a question, then turns the supporting
+evidence into a living visual canvas.
 
 Ask “why was Tuesday slow?” and Trinetra fans out durable probes for latency shifts, error clusters, deploy correlation, trace mining, and cardinality. Each probe streams a finished visual panel into the root chat session. Clicking or expanding early evidence writes a reward event with the decision propensity; that reward can shift the contextual Thompson policy and change which panel arrives next.
 
@@ -10,6 +12,13 @@ Built for the ClickHouse x Trigger.dev Virtual Summer Hackathon 2026.
 
 ## What is implemented
 
+- Always-on, zero-AI SQL detectors for p99 latency regression, trace error-rate
+  spikes, and OpenTelemetry freshness
+- Durable detector runs and deduplicated incident lifecycle state in ClickHouse
+- Declarative Trigger.dev schedule that evaluates every five minutes with
+  retries and single-run concurrency
+- Operations-first homepage with active detections, detector health, telemetry
+  watermark, guardrail visuals, scan history, and manual scans
 - Polished responsive incident canvas with progressive panels, root-cause confirmation, full-screen drill-downs, and a live investigation rail
 - Live OpenTelemetry telemetry path for production investigations
 - Durable `chat.agent()` implementation with Trigger.dev probe subtasks and root-streamed `data-panel` parts
@@ -26,7 +35,12 @@ Built for the ClickHouse x Trigger.dev Virtual Summer Hackathon 2026.
 
 ```mermaid
 flowchart LR
-    U["SRE asks a question"] --> UI["Next.js visual canvas"]
+    O["OpenTelemetry stream"] --> CH["ClickHouse telemetry"]
+    S["Trigger.dev 5m schedule"] --> DET["Deterministic detectors"]
+    DET --> CH
+    DET --> INC["Durable incidents"]
+    INC --> UI["Next.js operations + visual canvas"]
+    U["SRE asks a question"] --> UI
     UI --> A["Trigger.dev chat.agent()"]
     A --> P["Contextual Thompson policy"]
     P --> L["Latency shift task"]
@@ -34,7 +48,7 @@ flowchart LR
     P --> D["Deploy correlation task"]
     P --> T["Trace mining task"]
     P --> C["Cardinality task"]
-    L & E & D & T & C --> CH["ClickHouse telemetry"]
+    L & E & D & T & C --> CH
     L & E & D & T & C --> UI
     UI --> VR["Visual report task + typed progress stream"]
     VR --> PDF["Vector PDF composer"]
@@ -77,6 +91,8 @@ Apply the policy schema and the live OpenTelemetry compatibility views:
 ```bash
 # Learning/policy tables
 clickhouse-client --multiquery < db/clickhouse/001_schema.sql
+# Optional explicit migration; the app also creates detection tables lazily
+clickhouse-client --multiquery < db/clickhouse/007_always_on_detection.sql
 psql "$POSTGRES_URL" -f db/postgres/001_schema.sql
 ```
 
@@ -130,6 +146,9 @@ The Trigger.dev implementation follows the current managed-agent and subtask str
 - `trigger/probes/*.ts` are typed `schemaTask` probe subtasks.
 - Each subtask uses `chat.stream.writer({ target: "root" })` to stream custom visual data parts.
 - `trigger/visual-report.ts` reuses the investigation team, emits run-scoped typed progress, and optionally emails the whole report as a multi-page PDF attachment.
+- `trigger/always-on-detection.ts` runs a declarative five-minute production
+  schedule. It uses deterministic ClickHouse queries and never imports an AI
+  model, so monitoring remains operational when model credit is unavailable.
 - `lib/reports/visual-report-pdf.ts` turns every metrics, chart, and evidence panel into a print-ready vector report with a cover, contents, sources, and page numbers.
 
 ## Policy and reward design

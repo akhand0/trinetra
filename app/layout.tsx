@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Trinetra · The Third Eye for Your Telemetry",
   description:
-    "An adaptive incident-investigation agent that answers with a living visual canvas.",
+    "Always-on telemetry detection and visual incident investigation powered by ClickHouse and Trigger.dev.",
 };
 
 export const viewport: Viewport = {

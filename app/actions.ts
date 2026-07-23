@@ -3,11 +3,29 @@
 import { auth, tasks } from "@trigger.dev/sdk";
 import { chat } from "@trigger.dev/sdk/ai";
 import {
+  readDetectionSnapshot,
+  runDetectionCycle,
+} from "@/lib/clickhouse/detections";
+import {
   persistSharedVisualResponse,
   SharedVisualResponseInputError,
 } from "@/lib/clickhouse/shared-visual-responses";
 import type { visualReportTask } from "@/trigger/visual-report";
 import type { trinetraAgent } from "@/trigger/agent";
+
+const detectionActionState = globalThis as typeof globalThis & {
+  trinetraDetectionAction?: {
+    lastStartedAt: number;
+    promise: ReturnType<typeof runDetectionCycle> | null;
+  };
+};
+
+if (!detectionActionState.trinetraDetectionAction) {
+  detectionActionState.trinetraDetectionAction = {
+    lastStartedAt: 0,
+    promise: null,
+  };
+}
 
 export const startChatSession =
   chat.createStartSessionAction<typeof trinetraAgent>("trinetra-agent");
@@ -59,4 +77,24 @@ export async function startVisualReport(input: {
     runId: handle.id,
     accessToken: handle.publicAccessToken,
   };
+}
+
+export async function getDetectionSnapshot() {
+  return readDetectionSnapshot();
+}
+
+export async function runDetectorsNow() {
+  const state = detectionActionState.trinetraDetectionAction!;
+  if (state.promise) return state.promise;
+  if (Date.now() - state.lastStartedAt < 20_000) {
+    return readDetectionSnapshot();
+  }
+
+  state.lastStartedAt = Date.now();
+  state.promise = runDetectionCycle({ source: "manual" });
+  try {
+    return await state.promise;
+  } finally {
+    state.promise = null;
+  }
 }
