@@ -7,6 +7,7 @@ import {
 import {
   chartSubmissionSchema,
   heatmapSubmissionSchema,
+  hypothesisEvaluationSchema,
   metricSubmissionSchema,
   tableSubmissionSchema,
   traceSubmissionSchema,
@@ -141,6 +142,17 @@ const submissionTools = {
       return { kind: "trace" as const, ...input };
     },
   }),
+  submitHypothesis: tool({
+    description:
+      "Resolve one assigned causal hypothesis with concise evidence copied from " +
+      "ClickHouse. Use supports only for a credible causal signal and contradicts " +
+      "when the queried evidence weakens the cause.",
+    inputSchema: hypothesisEvaluationSchema,
+    execute: async (input) => ({
+      kind: "hypothesis" as const,
+      ...input,
+    }),
+  }),
   reportUnavailable: tool({
     description:
       "Use only when the available ClickHouse schema or rows cannot honestly " +
@@ -177,6 +189,7 @@ function hasAcceptedSubmission(steps: unknown) {
           output &&
           typeof output.kind === "string" &&
           (output.kind === "unavailable" ||
+            output.kind === "hypothesis" ||
             renderToolNames.includes(
               `submit${output.kind[0].toUpperCase()}${output.kind.slice(1)}` as (typeof renderToolNames)[number],
             ))
@@ -195,12 +208,20 @@ const submissionToolNames = [
   "submitTable",
   "submitHeatmap",
   "submitTrace",
+  "submitHypothesis",
   "reportUnavailable",
 ] as const;
 
 const renderToolNames = submissionToolNames.filter(
-  (name) => name !== "reportUnavailable",
+  (name) => name !== "reportUnavailable" && name !== "submitHypothesis",
 );
+
+function hypothesisFromAssignment(messages: unknown) {
+  const match = JSON.stringify(messages).match(
+    /HYPOTHESIS:\s*(deploy|database|traffic|downstream)\b/i,
+  );
+  return match?.[1]?.toLowerCase();
+}
 
 function countRenderableEvidence(steps: unknown) {
   if (!Array.isArray(steps)) return 0;
@@ -316,6 +337,7 @@ export const trinetraSpecialistAgent = chat.agent({
         ...clickStackTools,
         ...clickHouseTools,
       };
+      const assignedHypothesis = hypothesisFromAssignment(messages);
       const deliverable = visualDeliverableFromAssignment(messages);
       const compatibleRenderTools = submissionToolsForDeliverable(deliverable);
       const dataToolNames = Object.keys(specialistTools).filter(
@@ -324,15 +346,16 @@ export const trinetraSpecialistAgent = chat.agent({
             name as (typeof submissionToolNames)[number],
           ),
       );
-      const activeInvestigationTools = [
-        ...dataToolNames,
-        ...compatibleRenderTools,
-        "reportUnavailable",
-      ] as Array<keyof typeof specialistTools>;
-      const terminalTools = [
-        ...compatibleRenderTools,
-        "reportUnavailable",
-      ] as Array<keyof typeof specialistTools>;
+      const activeInvestigationTools = (
+        assignedHypothesis
+          ? [...dataToolNames, "submitHypothesis", "reportUnavailable"]
+          : [...dataToolNames, ...compatibleRenderTools, "reportUnavailable"]
+      ) as Array<keyof typeof specialistTools>;
+      const terminalTools = (
+        assignedHypothesis
+          ? ["submitHypothesis", "reportUnavailable"]
+          : [...compatibleRenderTools, "reportUnavailable"]
+      ) as Array<keyof typeof specialistTools>;
 
       return streamText({
         ...chat.toStreamTextOptions({ tools: specialistTools }),
@@ -382,6 +405,21 @@ Work independently and only from data that is actually available:
    rows deliverable may combine the verified incident row with real coverage or
    corroboration rows when that contrast is itself the strongest evidence.
 
+${
+  assignedHypothesis
+    ? `HYPOTHESIS MODE is active for "${assignedHypothesis}".
+Query evidence that can genuinely distinguish this cause from the alternatives.
+Then call submitHypothesis exactly once with id "${assignedHypothesis}", a
+supports or contradicts direction, a short data-backed rationale, confidence
+proportional to the evidence strength, and the queried ClickHouse table or
+telemetry source. Include the exact observed value or condition, plus the
+baseline and time window whenever available, so the verdict remains auditable.
+Do not call a visual renderer in hypothesis mode. Absence of data is not
+contradictory evidence; call reportUnavailable instead.`
+    : `VISUAL MODE is active. Do not call submitHypothesis; finish with one
+compatible renderer or reportUnavailable.`
+}
+
 Do not write a prose answer. Never issue writes, DDL, or destructive SQL.`,
         messages,
         tools: specialistTools,
@@ -389,6 +427,22 @@ Do not write a prose answer. Never issue writes, DDL, or destructive SQL.`,
         stopWhen: [stepCountIs(14), ({ steps }) => hasAcceptedSubmission(steps)],
         prepareStep: async ({ steps }) => {
           const submitted = hasAcceptedSubmission(steps);
+          if (assignedHypothesis && !submitted) {
+            if (countRenderableEvidence(steps) >= 1) {
+              return { activeTools: activeInvestigationTools };
+            }
+            if (steps.length >= 10) {
+              return {
+                activeTools: terminalTools,
+                toolChoice: "required" as const,
+              };
+            }
+            return {
+              activeTools: dataToolNames as Array<
+                keyof typeof specialistTools
+              >,
+            };
+          }
           if (
             !submitted &&
             steps.length >= 10 &&

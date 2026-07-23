@@ -121,6 +121,7 @@ export function AgentHome() {
   const voiceReplyAfterIdRef = useRef<string | null>(null);
   const spokenMessageIdRef = useRef<string | null>(null);
   const selectionSubmissionRef = useRef(false);
+  const previousMessageCountRef = useRef(0);
   const transport = useTriggerChatTransport<typeof trinetraAgent>({
     task: "trinetra-agent",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
@@ -187,9 +188,11 @@ export function AgentHome() {
   }, [isRunning]);
 
   useEffect(() => {
-    if (!hasMessages) return;
+    const previousCount = previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+    if (!hasMessages || messages.length === previousCount) return;
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [hasMessages, messages, status]);
+  }, [hasMessages, messages.length]);
 
   useEffect(() => {
     if (error) {

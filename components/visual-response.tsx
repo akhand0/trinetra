@@ -35,6 +35,7 @@ import {
 } from "@/lib/telemetry/visual-response";
 import { VisualReportControl } from "@/components/visual-report-control";
 import { VisualShareControl } from "@/components/visual-share-control";
+import { HypothesisRace } from "@/components/hypothesis-race";
 import {
   selectionShortLabel,
   visualPanelLinkState,
@@ -313,6 +314,10 @@ export function VisualResponseGroup({
         </div>
       </header>
 
+      {response.hypothesisRace && (
+        <HypothesisRace race={response.hypothesisRace} />
+      )}
+
       {activeSelection && (
         <div
           className={`visual-investigation-shelf${
@@ -392,7 +397,7 @@ export function VisualResponseGroup({
         </div>
       )}
 
-      {response.status === "running" ? (
+      {response.status === "running" && !response.hypothesisRace && (
         <div className="agent-team-progress" role="status">
           {response.specialists.map((specialist, index) => (
             <div key={specialist}>
@@ -402,10 +407,13 @@ export function VisualResponseGroup({
             </div>
           ))}
         </div>
-      ) : response.panels.length > 0 ? (
+      )}
+      {response.panels.length > 0 && (
         <div className="agent-response-grid">
           {panelStates.map(({ panel, linkState }) => (
             <div
+              id={`visual-panel-${panel.id}`}
+              tabIndex={-1}
               className={`agent-response-panel level-${panel.level} span-${panel.span} selection-${linkState}`}
               key={panel.id}
             >
@@ -419,7 +427,8 @@ export function VisualResponseGroup({
             </div>
           ))}
         </div>
-      ) : (
+      )}
+      {response.status === "complete" && response.panels.length === 0 && (
         <div className="agent-response-empty">
           <Layers3 size={20} />
           The investigators could not validate a visual from this data.

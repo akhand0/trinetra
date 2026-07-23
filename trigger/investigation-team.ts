@@ -8,11 +8,23 @@ import {
 } from "@/lib/telemetry/visual-deliverables";
 import {
   MAX_INVESTIGATION_VISUALS,
+  hypothesisEvaluationSchema,
+  unavailableSubmissionSchema,
   visualSubmissionSchema,
+  type HypothesisEvidence,
   type VisualPanel,
   type VisualResponseData,
   type VisualSubmission,
 } from "@/lib/telemetry/visual-response";
+import {
+  HYPOTHESIS_DEFINITIONS,
+  addHypothesisEvidence,
+  createHypothesisRace,
+  markHypothesisUnavailable,
+  reconcileHypothesisRace,
+  resolveHypothesisRace,
+  setHypothesisProgress,
+} from "@/lib/telemetry/hypothesis-race";
 import { streamVisualResponse } from "./probes/shared";
 import type { trinetraSpecialistAgent } from "./specialist-agent";
 
@@ -245,6 +257,30 @@ function extractSubmission(result: {
   return null;
 }
 
+type HypothesisSubmission =
+  | ({ kind: "hypothesis" } & z.infer<typeof hypothesisEvaluationSchema>)
+  | ({ kind: "unavailable" } & z.infer<typeof unavailableSubmissionSchema>);
+
+function extractHypothesisSubmission(result: {
+  toolResults: Array<{ output: unknown }>;
+}): HypothesisSubmission | null {
+  for (const toolResult of result.toolResults.toReversed()) {
+    const output =
+      (toolResult.output as { value?: unknown } | undefined)?.value ??
+      toolResult.output;
+    const kind = (output as { kind?: unknown } | undefined)?.kind;
+    if (kind === "hypothesis") {
+      const parsed = hypothesisEvaluationSchema.safeParse(output);
+      if (parsed.success) return { kind: "hypothesis", ...parsed.data };
+    }
+    if (kind === "unavailable") {
+      const parsed = unavailableSubmissionSchema.safeParse(output);
+      if (parsed.success) return { kind: "unavailable", ...parsed.data };
+    }
+  }
+  return null;
+}
+
 function toPanel(
   submission: Exclude<VisualSubmission, { kind: "unavailable" }>,
   specialist: VisualAssignment,
@@ -317,13 +353,15 @@ export async function runInvestigationTeam(
   const specialists = parsedPlan.success
     ? parsedPlan.data.specialists
     : fallbackAssignments(query);
+  let hypothesisRace = createHypothesisRace();
   const running: VisualResponseData = {
     id: responseId,
     query: displayQuery,
     title,
-    verdict: `${specialists.length} prompt-specific investigator${specialists.length === 1 ? " is" : "s are"} inspecting ClickHouse…`,
+    verdict: `Four competing causes are entering the evidence race while ${specialists.length} visual investigator${specialists.length === 1 ? " inspects" : "s inspect"} ClickHouse…`,
     status: "running",
     specialists: specialists.map((specialist) => specialist.label),
+    hypothesisRace,
     panels: [],
   };
   await publish(running);
@@ -334,6 +372,13 @@ export async function runInvestigationTeam(
       new AgentChat<typeof trinetraSpecialistAgent>({
         agent: "trinetra-specialist",
         id: `${episodeId}-${specialist.id}`,
+      }),
+  );
+  const hypothesisChats = HYPOTHESIS_DEFINITIONS.map(
+    (hypothesis) =>
+      new AgentChat<typeof trinetraSpecialistAgent>({
+        agent: "trinetra-specialist",
+        id: `${episodeId}-hypothesis-${hypothesis.id}`,
       }),
   );
 
@@ -354,56 +399,187 @@ series and rows deliverables must query supporting telemetry. Choose the exact
 visual within the assigned deliverable from the returned data shape.
 Specialist position: ${index + 1} of ${specialists.length}.`);
 
+  const hypothesisAssignments = HYPOTHESIS_DEFINITIONS.map(
+    (hypothesis) => `HYPOTHESIS: ${hypothesis.id}
+LABEL: ${hypothesis.label}
+OBJECTIVE: ${hypothesis.objective}
+USER PROMPT: ${query}
+PRIORITY SIGNALS: ${priorityArms.join(", ")}
+EPISODE: ${episodeId}
+INCIDENT CONTEXT: ${
+      incidentSeed
+        ? JSON.stringify({
+            incident_id: incidentSeed.incident_id,
+            window_start: incidentSeed.window_start,
+            window_end: incidentSeed.window_end,
+          })
+        : "none found"
+    }
+
+Test only this causal hypothesis against actual ClickHouse telemetry. Compare the
+incident window with a useful baseline when the data permits. The incident
+context identifies the window but does not reveal or prove its cause. Return one structured
+hypothesis verdict after querying, or report the exact unavailable evidence.`,
+  );
+
+  const panelSlots: Array<VisualPanel | undefined> = Array(
+    specialists.length,
+  ).fill(undefined);
+  const unavailableSlots: Array<string | undefined> = Array(
+    specialists.length,
+  ).fill(undefined);
+  let publishQueue = Promise.resolve();
+
+  const runningVerdict = () => {
+    const leader = hypothesisRace.hypotheses.find(
+      (hypothesis) => hypothesis.state === "leading",
+    );
+    const progress = `${hypothesisRace.completed}/${hypothesisRace.total} competing causes tested`;
+    return leader
+      ? `${progress} · ${leader.label} currently leads on evidence.`
+      : `${progress} · Evidence is arriving live from ClickHouse.`;
+  };
+
+  const publishRunningSnapshot = () => {
+    const snapshot: VisualResponseData = {
+      id: responseId,
+      query: displayQuery,
+      title,
+      verdict: runningVerdict(),
+      status: "running",
+      specialists: specialists.map((specialist) => specialist.label),
+      hypothesisRace,
+      panels: panelSlots.flatMap((panel) => (panel ? [panel] : [])),
+    };
+    publishQueue = publishQueue.then(() => publish(snapshot));
+    return publishQueue;
+  };
+
   try {
-    const settled = await Promise.allSettled(
-      chats.map(async (specialistChat, index) => {
+    const visualJobs = chats.map(async (specialistChat, index) => {
+      try {
         const stream = await specialistChat.sendMessage(assignments[index], {
           abortSignal,
         });
-        return stream.result();
-      }),
-    );
-
-    const panels: VisualPanel[] = [];
-    const unavailable: string[] = [];
-    settled.forEach((result, index) => {
-      if (result.status === "rejected") {
-        unavailable.push(`${specialists[index].label} failed`);
-        return;
+        const result = await stream.result();
+        const rawSubmission = extractSubmission(result);
+        if (rawSubmission?.kind === "unavailable") {
+          unavailableSlots[index] = rawSubmission.reason;
+        } else {
+          const submission =
+            rawSubmission &&
+            visualKindSupportsDeliverable(
+              specialists[index].deliverable,
+              rawSubmission.kind,
+            ) &&
+            isUsefulSubmission(rawSubmission)
+              ? rawSubmission
+              : null;
+          if (submission) {
+            panelSlots[index] = toPanel(
+              submission,
+              specialists[index],
+              episodeId,
+            );
+          } else {
+            unavailableSlots[index] =
+              `${specialists[index].label} returned no visual`;
+          }
+        }
+      } catch {
+        unavailableSlots[index] = `${specialists[index].label} failed`;
       }
-      const rawSubmission = extractSubmission(result.value);
-      if (rawSubmission?.kind === "unavailable") {
-        unavailable.push(rawSubmission.reason);
-        return;
-      }
-      const submission =
-        rawSubmission &&
-        visualKindSupportsDeliverable(
-          specialists[index].deliverable,
-          rawSubmission.kind,
-        ) &&
-        isUsefulSubmission(rawSubmission)
-          ? rawSubmission
-          : null;
-      if (!submission) {
-        unavailable.push(`${specialists[index].label} returned no visual`);
-        return;
-      }
-      panels.push(toPanel(submission, specialists[index], episodeId));
+      await publishRunningSnapshot();
     });
 
+    const hypothesisJobs = hypothesisChats.map(
+      async (hypothesisChat, index) => {
+        const hypothesis = HYPOTHESIS_DEFINITIONS[index];
+        try {
+          const stream = await hypothesisChat.sendMessage(
+            hypothesisAssignments[index],
+            { abortSignal },
+          );
+          const result = await stream.result();
+          const submission = extractHypothesisSubmission(result);
+          if (
+            submission?.kind === "hypothesis" &&
+            submission.id === hypothesis.id
+          ) {
+            const evidence: HypothesisEvidence = {
+              id: `${episodeId}-hypothesis-evidence-${hypothesis.id}`,
+              hypothesisId: hypothesis.id,
+              direction: submission.direction,
+              summary: submission.rationale,
+              confidence: submission.confidence,
+              source: submission.source,
+              observed: submission.observed,
+              baseline: submission.baseline,
+              window: submission.window,
+            };
+            hypothesisRace = addHypothesisEvidence(
+              hypothesisRace,
+              evidence,
+            );
+          } else {
+            const note =
+              submission?.kind === "unavailable"
+                ? submission.reason
+                : `${hypothesis.label} investigator returned no supported verdict.`;
+            hypothesisRace = markHypothesisUnavailable(
+              hypothesisRace,
+              hypothesis.id,
+              note,
+            );
+          }
+        } catch {
+          hypothesisRace = markHypothesisUnavailable(
+            hypothesisRace,
+            hypothesis.id,
+            `${hypothesis.label} investigator failed before reaching a verdict.`,
+          );
+        }
+        hypothesisRace = setHypothesisProgress(
+          hypothesisRace,
+          hypothesisRace.completed + 1,
+        );
+        await publishRunningSnapshot();
+      },
+    );
+
+    await Promise.all([...visualJobs, ...hypothesisJobs]);
+    await publishQueue;
+
+    const panels = panelSlots.flatMap((panel) => (panel ? [panel] : []));
+    const unavailable = unavailableSlots.flatMap((message) =>
+      message ? [message] : [],
+    );
     const verdict =
       panels.find((panel) => panel.level === "overview")?.finding ??
       panels[0]?.finding ??
       unavailable[0] ??
       "No supported visual could be built from the available ClickHouse data.";
+    hypothesisRace = reconcileHypothesisRace(
+      resolveHypothesisRace(hypothesisRace),
+      verdict,
+    );
+    const raceWinner =
+      hypothesisRace.status === "resolved"
+        ? hypothesisRace.hypotheses.find(
+            (hypothesis) => hypothesis.id === hypothesisRace.winnerId,
+          )
+        : undefined;
+    const reconciledVerdict = raceWinner
+      ? `${raceWinner.label} is the best-supported cause. ${verdict}`
+      : verdict;
     const complete: VisualResponseData = {
       id: responseId,
       query: displayQuery,
       title,
-      verdict,
+      verdict: reconciledVerdict,
       status: "complete",
       specialists: specialists.map((specialist) => specialist.label),
+      hypothesisRace,
       panels,
     };
     await publish(complete);
@@ -412,13 +588,15 @@ Specialist position: ${index + 1} of ${specialists.length}.`);
       visualRendered: panels.length > 0,
       panelCount: panels.length,
       levels: panels.map((panel) => panel.level),
-      verdict,
+      verdict: reconciledVerdict,
       unavailable,
       report: complete,
     };
   } finally {
     await Promise.all(
-      chats.map((specialistChat) => specialistChat.close().catch(() => {})),
+      [...chats, ...hypothesisChats].map((specialistChat) =>
+        specialistChat.close().catch(() => {}),
+      ),
     );
   }
 }

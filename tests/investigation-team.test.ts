@@ -3,13 +3,16 @@ import type { VisualSubmission } from "@/lib/telemetry/visual-response";
 
 const agentMocks = vi.hoisted(() => ({
   submissions: [] as unknown[],
+  hypotheses: [] as unknown[],
   close: vi.fn(),
 }));
 
 vi.mock("@trigger.dev/sdk/chat", () => ({
   AgentChat: class {
-    async sendMessage() {
-      const submission = agentMocks.submissions.shift();
+    async sendMessage(assignment: string) {
+      const submission = assignment.includes("HYPOTHESIS:")
+        ? agentMocks.hypotheses.shift()
+        : agentMocks.submissions.shift();
       return {
         result: async () => ({
           toolResults: [{ output: { value: submission } }],
@@ -71,14 +74,68 @@ const table: VisualSubmission = {
   },
 };
 
+function unavailableHypotheses() {
+  return ["deploy", "database", "traffic", "downstream"].map((id) => ({
+    kind: "unavailable",
+    reason: `${id} telemetry was unavailable in the requested range.`,
+  }));
+}
+
 describe("investigation team composition", () => {
   beforeEach(() => {
     agentMocks.submissions = [];
+    agentMocks.hypotheses = unavailableHypotheses();
     agentMocks.close.mockClear();
   });
 
   it("publishes verdict, chart, and table deliverables without collapsing them", async () => {
     agentMocks.submissions = [metrics, line, table];
+    agentMocks.hypotheses = [
+      {
+        kind: "hypothesis",
+        id: "deploy",
+        direction: "contradicts",
+        rationale: "Latency was already elevated before the latest rollout.",
+        confidence: 76,
+        source: "logs",
+        observed: "p99 elevated 6m before rollout",
+        baseline: "180ms p99",
+        window: "10:00–11:00 UTC",
+      },
+      {
+        kind: "hypothesis",
+        id: "database",
+        direction: "supports",
+        rationale: "Database pool wait time rose with the incident latency.",
+        confidence: 92,
+        source: "otel_traces",
+        observed: "840ms database pool wait",
+        baseline: "42ms pool wait",
+        window: "10:02–10:14 UTC",
+      },
+      {
+        kind: "hypothesis",
+        id: "traffic",
+        direction: "contradicts",
+        rationale: "Request volume stayed inside its baseline band.",
+        confidence: 81,
+        source: "otel_metrics",
+        observed: "1.02× baseline request rate",
+        baseline: "980 requests/min",
+        window: "10:00–11:00 UTC",
+      },
+      {
+        kind: "hypothesis",
+        id: "downstream",
+        direction: "contradicts",
+        rationale: "Dependency spans remained healthy through the window.",
+        confidence: 74,
+        source: "otel_traces",
+        observed: "dependency p95 inside baseline",
+        baseline: "120ms p95",
+        window: "10:00–11:00 UTC",
+      },
+    ];
     const published: unknown[] = [];
 
     const result = await runInvestigationTeam(
@@ -122,9 +179,28 @@ describe("investigation team composition", () => {
       },
     );
 
-    expect(published).toHaveLength(2);
-    expect(published[0]).toMatchObject({ status: "running", panels: [] });
-    expect(published[1]).toMatchObject({ status: "complete" });
+    expect(published).toHaveLength(9);
+    expect(published[0]).toMatchObject({
+      status: "running",
+      panels: [],
+      hypothesisRace: { completed: 0, evidence: [] },
+    });
+    expect(
+      published.slice(1, -1).some(
+        (response) =>
+          (response as { status?: string; panels?: unknown[] }).status ===
+            "running" &&
+          ((response as { panels?: unknown[] }).panels?.length ?? 0) > 0,
+      ),
+    ).toBe(true);
+    expect(published.at(-1)).toMatchObject({
+      status: "complete",
+      hypothesisRace: {
+        status: "resolved",
+        completed: 4,
+        winnerId: "database",
+      },
+    });
     expect(result.visualRendered).toBe(true);
     expect(result.panelCount).toBe(3);
     expect(result.report.panels.map((panel) => panel.kind)).toEqual([
@@ -137,7 +213,8 @@ describe("investigation team composition", () => {
         ? result.report.panels[1].spec.mark
         : null,
     ).toBe("line");
-    expect(agentMocks.close).toHaveBeenCalledTimes(3);
+    expect(result.report.hypothesisRace?.winnerId).toBe("database");
+    expect(agentMocks.close).toHaveBeenCalledTimes(7);
   });
 
   it("does not accept metric cards for a series deliverable", async () => {
@@ -235,7 +312,7 @@ describe("investigation team composition", () => {
       "table",
       "table",
     ]);
-    expect(agentMocks.close).toHaveBeenCalledTimes(5);
+    expect(agentMocks.close).toHaveBeenCalledTimes(9);
   });
 
   it("uses one minimal investigator when a generated plan is unavailable", async () => {
@@ -252,6 +329,6 @@ describe("investigation team composition", () => {
 
     expect(result.panelCount).toBe(1);
     expect(result.report.specialists).toEqual(["Lead investigator"]);
-    expect(agentMocks.close).toHaveBeenCalledTimes(1);
+    expect(agentMocks.close).toHaveBeenCalledTimes(5);
   });
 });
