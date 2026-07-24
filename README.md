@@ -80,8 +80,10 @@ The first result fan-out appears progressively. Open the error-cluster panel to 
 Copy `.env.example` to `.env.local` and configure:
 
 - `TRIGGER_SECRET_KEY` and `TRIGGER_PROJECT_REF`
-- `OPENROUTER_API_KEY` and `TRINETRA_MODEL` (defaults to Kimi K3 through
-  OpenRouter's OpenAI-compatible Chat Completions API)
+- `OPENROUTER_API_KEY` and `TRINETRA_MODEL` (defaults to the free
+  `google/gemma-4-31b-it:free` route through OpenRouter's OpenAI-compatible
+  Chat Completions API; set `TRINETRA_MODEL` to a `claude-*` id and provide
+  `ANTHROPIC_API_KEY` to use Anthropic's native API instead)
 - `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DATABASE`
 - `POSTGRES_URL` for ClickHouse-managed Postgres
 - `RESEND_API_KEY` and `RESEND_FROM_EMAIL` only when email delivery is wanted
