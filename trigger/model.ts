@@ -1,3 +1,4 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 
 /** OpenRouter exposes an OpenAI-compatible Chat Completions endpoint. */
@@ -12,8 +13,26 @@ export const openrouter = createOpenAI({
   },
 });
 
+/** Native Anthropic provider, used when TRINETRA_MODEL names a Claude model. */
+export const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+function selectedModel() {
+  return process.env.TRINETRA_MODEL ?? "moonshotai/kimi-k3";
+}
+
+/** A Claude model is served by the native Anthropic API, not OpenRouter. */
+function isAnthropicModel(model: string) {
+  return model.startsWith("claude-") || model.startsWith("anthropic/");
+}
+
 export function trinetraModel() {
-  return openrouter.chat(process.env.TRINETRA_MODEL ?? "moonshotai/kimi-k3");
+  const model = selectedModel();
+  if (isAnthropicModel(model)) {
+    return anthropic(model.replace(/^anthropic\//, ""));
+  }
+  return openrouter.chat(model);
 }
 
 /**
@@ -22,7 +41,7 @@ export function trinetraModel() {
  * data analysis and visual selection steps continue to use thinking mode.
  */
 export function forcedToolProviderOptions() {
-  const model = process.env.TRINETRA_MODEL ?? "moonshotai/kimi-k3";
+  const model = selectedModel();
   return model.startsWith("moonshotai/kimi-")
     ? { openai: { reasoningEffort: "none" as const } }
     : undefined;
