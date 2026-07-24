@@ -15,6 +15,7 @@
     "trigger:deploy": "trigger deploy"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.18",
     "@ai-sdk/mcp": "^2.0.15",
     "@ai-sdk/openai": "^4.0.16",
     "@ai-sdk/react": "^4.0.34",
