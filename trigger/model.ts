@@ -1,6 +1,8 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 
+export const DEFAULT_TRINETRA_MODEL = "google/gemma-4-31b-it:free";
+
 /** OpenRouter exposes an OpenAI-compatible Chat Completions endpoint. */
 export const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -19,7 +21,7 @@ export const anthropic = createAnthropic({
 });
 
 function selectedModel() {
-  return process.env.TRINETRA_MODEL ?? "moonshotai/kimi-k3";
+  return process.env.TRINETRA_MODEL ?? DEFAULT_TRINETRA_MODEL;
 }
 
 /** A Claude model is served by the native Anthropic API, not OpenRouter. */
@@ -36,9 +38,9 @@ export function trinetraModel() {
 }
 
 /**
- * Moonshot's thinking mode rejects an explicitly named tool choice. Disable
- * thinking only for the deterministic routing steps that name a tool; Kimi's
- * data analysis and visual selection steps continue to use thinking mode.
+ * Moonshot's thinking mode rejects an explicitly named tool choice. Keep the
+ * Kimi compatibility override for deployments that explicitly select a
+ * Moonshot model; Gemma, Claude, and other models use native tool calling.
  */
 export function forcedToolProviderOptions() {
   const model = selectedModel();
