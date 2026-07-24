@@ -37,7 +37,7 @@ import {
   investigateWithTeam,
   runInvestigationTeam,
 } from "./investigation-team";
-import { forcedToolProviderOptions, trinetraModel } from "./model";
+import { trinetraModel } from "./model";
 import { cardinalityScanProbe } from "./probes/cardinality-scan";
 import { deployCorrelationProbe } from "./probes/deploy-correlation";
 import { errorClusterProbe } from "./probes/error-cluster";
@@ -396,7 +396,6 @@ unable to send email. Do not investigate data or call any other tool.`,
           toolNamesFromSteps(steps).has("sendEmailReport")
             ? {}
             : {
-                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: "sendEmailReport" as const,
@@ -577,7 +576,6 @@ Panels stream directly from tools.`,
               !calledTools.has("investigateWithTeam")
             ) {
               return {
-                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: "investigateWithTeam" as const,
@@ -594,7 +592,6 @@ Panels stream directly from tools.`,
               !calledTools.has("renderTable")
             ) {
               return {
-                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: "renderTable" as const,
@@ -630,7 +627,6 @@ Panels stream directly from tools.`,
             ) {
               promotedArms.add(promoted);
               return {
-                providerOptions: forcedToolProviderOptions(),
                 toolChoice: {
                   type: "tool" as const,
                   toolName: ARM_TOOL_NAME[promoted],
