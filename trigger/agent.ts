@@ -166,6 +166,22 @@ function emailRecipient(query: string) {
   return query.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
 }
 
+// The user clearly wants to email a report but the request can't be fulfilled:
+// it's phrased as an email/report ask yet is missing a recipient address, or it
+// is a bare "send email"-style ask with no substance. Scoped tightly so genuine
+// investigations that merely mention email (e.g. "why is the email service
+// slow?") are never intercepted.
+function underspecifiedEmailRequest(query: string, recipient: string | undefined) {
+  if (recipient && isEmailReportRequest(query)) return false;
+  if (isEmailReportRequest(query)) return true;
+  const words = query.trim().split(/\s+/);
+  return (
+    words.length <= 4 &&
+    /\bemail\b/i.test(query) &&
+    /\b(send|e-?mail|share|deliver)\b/i.test(query)
+  );
+}
+
 function previousInvestigationQuery(messages: ModelMessage[]) {
   let skippedCurrent = false;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -401,6 +417,23 @@ unable to send email. Do not investigate data or call any other tool.`,
                   toolName: "sendEmailReport" as const,
                 },
               },
+      });
+    }
+
+    if (underspecifiedEmailRequest(visibleQuery, recipient)) {
+      return streamText({
+        ...chat.toStreamTextOptions({ tools: {} }),
+        model: trinetraModel(),
+        system: `The user wants to email a Trinetra visual report, but the
+request is missing what we need. Do NOT investigate telemetry and do NOT say you
+cannot send email. In one or two short sentences, tell them how: first run an
+investigation (for example "why are payments failing?") so there is a report,
+then send a message that includes both the word "report" and a recipient
+address — e.g. "email the report to you@example.com".`,
+        messages,
+        tools: {},
+        abortSignal: signal,
+        stopWhen: stepCountIs(1),
       });
     }
 
