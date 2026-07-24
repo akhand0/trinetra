@@ -14,9 +14,6 @@ importers:
       '@ai-sdk/mcp':
         specifier: ^2.0.15
         version: 2.0.15(zod@4.4.3)
-      '@ai-sdk/openai':
-        specifier: ^4.0.16
-        version: 4.0.16(zod@4.4.3)
       '@ai-sdk/react':
         specifier: ^4.0.34
         version: 4.0.34(react@19.2.7)(zod@4.4.3)
@@ -25,7 +22,7 @@ importers:
         version: 1.23.1
       '@trigger.dev/react-hooks':
         specifier: 4.5.5
-        version: 4.5.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: 4.5.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@trigger.dev/sdk':
         specifier: 4.5.5
         version: 4.5.5(ai@7.0.31(zod@4.4.3))(react@19.2.7)(supports-color@10.2.2)(zod@4.4.3)
@@ -113,12 +110,6 @@ packages:
 
   '@ai-sdk/mcp@2.0.15':
     resolution: {integrity: sha512-JIwbud+pMM6GgXDhwm5/lSpg7y8kAO1JHJ4NQEmfST6nXy3Gijaxy4LIrKqVR/1N5VPZAfwOdSsUWtbtTp6zZw==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/openai@4.0.16':
-    resolution: {integrity: sha512-Yh+PsXaf9NbN7oA3oKwOuyjTiHMPD75phf3SqGbDNNKQ3Yj3oTntp/WhO3nCHIPA6gr5/1lyridQokmOpPf9oQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -4232,12 +4223,6 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.4.3
 
-  '@ai-sdk/openai@4.0.16(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.3
-      '@ai-sdk/provider-utils': 5.0.11(zod@4.4.3)
-      zod: 4.4.3
-
   '@ai-sdk/provider-utils@5.0.11(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.3
@@ -5162,7 +5147,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@trigger.dev/react-hooks@4.5.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@trigger.dev/react-hooks@4.5.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@trigger.dev/core': 4.5.5(supports-color@10.2.2)
       react: 19.2.7
